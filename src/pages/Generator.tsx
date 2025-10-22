@@ -4,10 +4,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2, CheckCircle } from "lucide-react";
+import { Upload, Loader2, CheckCircle, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/DashboardLayout";
+import ChatWidget from "@/components/ChatWidget";
+import { supabase } from "@/integrations/supabase/client";
 
 const Generator = () => {
   const [orgName, setOrgName] = useState("");
@@ -50,23 +52,50 @@ const Generator = () => {
 
     setLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      // Check if user is authenticated
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to create an assistant",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+
+      // Upload files to FastAPI backend
+      const formData = new FormData();
+      formData.append("org_id", orgName);
+      files.forEach(file => formData.append("files", file));
+
+      const response = await fetch("http://localhost:5000/ingest", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Failed to upload files");
+
       setSuccess(true);
       toast({
         title: "Success!",
         description: "Your AI assistant has been created successfully",
       });
 
-      setTimeout(() => {
-        if (integration === "landing") {
-          navigate("/chat", { state: { orgName, languages } });
-        } else {
-          navigate("/dashboard");
-        }
-      }, 1500);
-    }, 2000);
+      // Navigate based on integration type
+      if (integration === "landing") {
+        navigate("/chat", { state: { orgName, languages } });
+      }
+    } catch (error) {
+      console.error("Error creating assistant:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create assistant. Make sure the backend server is running.",
+        variant: "destructive",
+      });
+      setLoading(false);
+    }
   };
 
   const handleReset = () => {
@@ -232,6 +261,24 @@ const Generator = () => {
               </Button>
             </div>
           </form>
+
+          {/* Chat Widget Preview */}
+          {success && integration === "widget" && (
+            <div className="mt-8 p-6 border-t">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-full bg-success/10">
+                  <MessageCircle className="w-5 h-5 text-success" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Chat Widget Active</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Your AI assistant is ready to help! Click the chat button to test it.
+                  </p>
+                </div>
+              </div>
+              <ChatWidget orgName={orgName} language={languages[0]} />
+            </div>
+          )}
         </Card>
       </div>
     </DashboardLayout>

@@ -1,0 +1,181 @@
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+export interface Message {
+  id?: string;
+  role: "user" | "bot";
+  content: string;
+  language: string;
+  escalated?: boolean;
+  created_at?: string;
+}
+
+export interface Conversation {
+  id: string;
+  org_id: string;
+  language: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const useChat = (orgId: string, language: string = "english") => {
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  // Create or get conversation
+  useEffect(() => {
+    const initConversation = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Check for existing conversation
+        const { data: existingConv } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("org_id", orgId)
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingConv) {
+          setConversationId(existingConv.id);
+          loadMessages(existingConv.id);
+        } else {
+          // Create new conversation
+          const { data: newConv, error } = await supabase
+            .from("conversations")
+            .insert({
+              org_id: orgId,
+              user_id: user.id,
+              language,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+          setConversationId(newConv.id);
+          
+          // Add greeting message
+          await addBotMessage(newConv.id, `Hello! Welcome to ${orgId}. How can I assist you today?`, language);
+        }
+      } catch (error) {
+        console.error("Error initializing conversation:", error);
+      }
+    };
+
+    if (orgId) {
+      initConversation();
+    }
+  }, [orgId, language]);
+
+  // Subscribe to realtime messages
+  useEffect(() => {
+    if (!conversationId) return;
+
+    const channel = supabase
+      .channel(`messages:${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          setMessages((prev) => [...prev, payload.new as Message]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId]);
+
+  const loadMessages = async (convId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      setMessages((data || []) as Message[]);
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    }
+  };
+
+  const addBotMessage = async (convId: string, content: string, lang: string) => {
+    try {
+      const { error } = await supabase.from("messages").insert({
+        conversation_id: convId,
+        role: "bot",
+        content,
+        language: lang,
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error adding bot message:", error);
+    }
+  };
+
+  const sendMessage = async (content: string) => {
+    if (!conversationId || !content.trim()) return;
+
+    setLoading(true);
+    try {
+      // Save user message
+      const { error: userMsgError } = await supabase.from("messages").insert({
+        conversation_id: conversationId,
+        role: "user",
+        content,
+        language,
+      });
+
+      if (userMsgError) throw userMsgError;
+
+      // Call backend API for response (integrate with your FastAPI backend)
+      const response = await fetch("http://localhost:5000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          org_id: orgId,
+          query: content,
+          top_k: 4,
+          lang: language,
+        }),
+      });
+
+      const data = await response.json();
+      
+      // Save bot response
+      await addBotMessage(conversationId, data.answer || "I couldn't find an answer.", language);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    messages,
+    loading,
+    sendMessage,
+    conversationId,
+  };
+};

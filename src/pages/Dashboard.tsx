@@ -1,30 +1,131 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Bot, MessageSquare, Languages, UserCog, Plus, BarChart3, TrendingUp, Users } from "lucide-react";
+import { MessageSquare, Languages, UserCog, Plus, BarChart3, TrendingUp, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  // Mock data - in real app, fetch from API
-  const stats = {
-    totalMessages: 1247,
-    englishMessages: 823,
-    tamilMessages: 424,
-    escalatedToAgent: 89,
-    avgResponseTime: "2.3s",
-    satisfactionRate: 94,
+  const [stats, setStats] = useState({
+    totalMessages: 0,
+    englishMessages: 0,
+    tamilMessages: 0,
+    escalatedToAgent: 0,
+  });
+
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to view analytics",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+
+      // Fetch all messages for the user's conversations
+      const { data: conversations } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("user_id", user.id);
+
+      if (!conversations || conversations.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const conversationIds = conversations.map(c => c.id);
+
+      // Get message statistics
+      const { data: messages } = await supabase
+        .from("messages")
+        .select("*")
+        .in("conversation_id", conversationIds);
+
+      if (messages) {
+        const englishCount = messages.filter(m => m.language === "english").length;
+        const tamilCount = messages.filter(m => m.language === "tamil").length;
+        const escalatedCount = messages.filter(m => m.escalated).length;
+
+        setStats({
+          totalMessages: messages.length,
+          englishMessages: englishCount,
+          tamilMessages: tamilCount,
+          escalatedToAgent: escalatedCount,
+        });
+
+        // Get recent activity (last 10 messages)
+        const recent = messages
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 10)
+          .map(msg => ({
+            id: msg.id,
+            type: msg.language,
+            message: msg.content.substring(0, 50) + (msg.content.length > 50 ? "..." : ""),
+            time: formatTimeAgo(msg.created_at),
+            escalated: msg.escalated,
+          }));
+
+        setRecentActivity(recent);
+      }
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load analytics data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recentActivity = [
-    { id: 1, type: "tamil", message: "Product inquiry", time: "2 min ago", escalated: false },
-    { id: 2, type: "english", message: "Shipping question", time: "5 min ago", escalated: false },
-    { id: 3, type: "tamil", message: "Return request", time: "12 min ago", escalated: true },
-    { id: 4, type: "english", message: "Technical support", time: "18 min ago", escalated: false },
-    { id: 5, type: "english", message: "Billing inquiry", time: "23 min ago", escalated: true },
-  ];
+  const formatTimeAgo = (timestamp: string) => {
+    const now = new Date().getTime();
+    const time = new Date(timestamp).getTime();
+    const diff = now - time;
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    return `${days} day${days > 1 ? "s" : ""} ago`;
+  };
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const englishPercentage = stats.totalMessages > 0 
+    ? Math.round((stats.englishMessages / stats.totalMessages) * 100) 
+    : 0;
+  const tamilPercentage = stats.totalMessages > 0 
+    ? Math.round((stats.tamilMessages / stats.totalMessages) * 100) 
+    : 0;
 
   return (
     <DashboardLayout>
@@ -87,19 +188,19 @@ const Dashboard = () => {
               <div>
                 <div className="flex justify-between mb-2">
                   <span className="text-sm font-medium">English</span>
-                  <span className="text-sm text-muted-foreground">66%</span>
+                  <span className="text-sm text-muted-foreground">{englishPercentage}%</span>
                 </div>
                 <div className="h-3 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full" style={{ width: "66%" }} />
+                  <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${englishPercentage}%` }} />
                 </div>
               </div>
               <div>
                 <div className="flex justify-between mb-2">
                   <span className="text-sm font-medium">Tamil</span>
-                  <span className="text-sm text-muted-foreground">34%</span>
+                  <span className="text-sm text-muted-foreground">{tamilPercentage}%</span>
                 </div>
                 <div className="h-3 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-info rounded-full" style={{ width: "34%" }} />
+                  <div className="h-full bg-info rounded-full transition-all" style={{ width: `${tamilPercentage}%` }} />
                 </div>
               </div>
             </div>
@@ -108,23 +209,32 @@ const Dashboard = () => {
           {/* Performance Metrics */}
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold">Performance Metrics</h3>
+              <h3 className="text-xl font-semibold">Message Statistics</h3>
               <TrendingUp className="w-5 h-5 text-success" />
             </div>
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-muted-foreground">Avg Response Time</span>
-                  <span className="text-2xl font-bold text-success">{stats.avgResponseTime}</span>
+                  <span className="text-sm text-muted-foreground">Total Conversations</span>
+                  <span className="text-2xl font-bold">{stats.totalMessages}</span>
                 </div>
               </div>
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-muted-foreground">Satisfaction Rate</span>
-                  <span className="text-2xl font-bold text-success">{stats.satisfactionRate}%</span>
+                  <span className="text-sm text-muted-foreground">Escalation Rate</span>
+                  <span className="text-2xl font-bold">
+                    {stats.totalMessages > 0 
+                      ? Math.round((stats.escalatedToAgent / stats.totalMessages) * 100) 
+                      : 0}%
+                  </span>
                 </div>
                 <div className="h-3 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-success rounded-full" style={{ width: `${stats.satisfactionRate}%` }} />
+                  <div 
+                    className="h-full bg-warning rounded-full transition-all" 
+                    style={{ 
+                      width: `${stats.totalMessages > 0 ? (stats.escalatedToAgent / stats.totalMessages) * 100 : 0}%` 
+                    }} 
+                  />
                 </div>
               </div>
             </div>
@@ -134,8 +244,13 @@ const Dashboard = () => {
         {/* Recent Activity */}
         <Card className="p-6">
           <h3 className="text-xl font-semibold mb-6">Recent Activity</h3>
-          <div className="space-y-4">
-            {recentActivity.map((activity) => (
+          {recentActivity.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              No activity yet. Start creating assistants to see analytics!
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {recentActivity.map((activity) => (
               <div
                 key={activity.id}
                 className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
@@ -157,8 +272,9 @@ const Dashboard = () => {
                   </div>
                 )}
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
     </DashboardLayout>
