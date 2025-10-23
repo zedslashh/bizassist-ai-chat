@@ -1,1 +1,10 @@
 project_id = "ofeuaefhqeqgwxtutgqf"
+
+[functions.ingest-documents]
+verify_jwt = false
+
+[functions.query-assistant]
+verify_jwt = false
+
+[functions.get-greeting]
+verify_jwt = false

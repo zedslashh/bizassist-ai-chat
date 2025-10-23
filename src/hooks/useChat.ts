@@ -61,8 +61,17 @@ export const useChat = (orgId: string, language: string = "english") => {
           if (error) throw error;
           setConversationId(newConv.id);
           
-          // Add greeting message
-          await addBotMessage(newConv.id, `Hello! Welcome to ${orgId}. How can I assist you today?`, language);
+          // Get greeting from backend
+          try {
+            const { data: greetingData } = await supabase.functions.invoke('get-greeting', {
+              body: { org_id: orgId, lang: language }
+            });
+            const greeting = greetingData?.greeting || `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            await addBotMessage(newConv.id, greeting, language);
+          } catch (err) {
+            console.error("Error fetching greeting:", err);
+            await addBotMessage(newConv.id, `Hello! Welcome to ${orgId}. How can I assist you today?`, language);
+          }
         }
       } catch (error) {
         console.error("Error initializing conversation:", error);
@@ -144,22 +153,20 @@ export const useChat = (orgId: string, language: string = "english") => {
 
       if (userMsgError) throw userMsgError;
 
-      // Call backend API for response (integrate with your FastAPI backend)
-      const response = await fetch("http://localhost:5000/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Call backend via edge function
+      const { data, error } = await supabase.functions.invoke('query-assistant', {
+        body: {
           org_id: orgId,
           query: content,
           top_k: 4,
           lang: language,
-        }),
+        }
       });
 
-      const data = await response.json();
+      if (error) throw error;
       
       // Save bot response
-      await addBotMessage(conversationId, data.answer || "I couldn't find an answer.", language);
+      await addBotMessage(conversationId, data?.answer || "I couldn't find an answer.", language);
     } catch (error) {
       console.error("Error sending message:", error);
       toast({

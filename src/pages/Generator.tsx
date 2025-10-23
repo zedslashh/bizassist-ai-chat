@@ -65,17 +65,20 @@ const Generator = () => {
         return;
       }
 
-      // Upload files to FastAPI backend
+      // Upload files via edge function
       const formData = new FormData();
       formData.append("org_id", orgName);
       files.forEach(file => formData.append("files", file));
 
-      const response = await fetch("http://localhost:5000/ingest", {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ingest-documents`, {
         method: "POST",
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Failed to upload files");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to upload files");
+      }
 
       setSuccess(true);
       toast({
