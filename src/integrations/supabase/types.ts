@@ -79,6 +79,187 @@ export type Database = {
           },
         ]
       }
+      workflow_approvals: {
+        Row: {
+          approved_at: string | null
+          approver_id: string | null
+          comments: string | null
+          created_at: string | null
+          id: string
+          instance_id: string | null
+          node_id: string
+          status: Database["public"]["Enums"]["approval_status"]
+          task_id: string | null
+          title: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approver_id?: string | null
+          comments?: string | null
+          created_at?: string | null
+          id?: string
+          instance_id?: string | null
+          node_id: string
+          status?: Database["public"]["Enums"]["approval_status"]
+          task_id?: string | null
+          title: string
+        }
+        Update: {
+          approved_at?: string | null
+          approver_id?: string | null
+          comments?: string | null
+          created_at?: string | null
+          id?: string
+          instance_id?: string | null
+          node_id?: string
+          status?: Database["public"]["Enums"]["approval_status"]
+          task_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_approvals_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_approvals_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_instances: {
+        Row: {
+          completed_at: string | null
+          context_data: Json | null
+          created_at: string | null
+          current_node_id: string | null
+          id: string
+          started_at: string | null
+          started_by: string | null
+          status: Database["public"]["Enums"]["workflow_instance_status"]
+          workflow_id: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          context_data?: Json | null
+          created_at?: string | null
+          current_node_id?: string | null
+          id?: string
+          started_at?: string | null
+          started_by?: string | null
+          status?: Database["public"]["Enums"]["workflow_instance_status"]
+          workflow_id?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          context_data?: Json | null
+          created_at?: string | null
+          current_node_id?: string | null
+          id?: string
+          started_at?: string | null
+          started_by?: string | null
+          status?: Database["public"]["Enums"]["workflow_instance_status"]
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_instances_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_tasks: {
+        Row: {
+          assigned_to: string | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string | null
+          description: string | null
+          due_date: string | null
+          id: string
+          instance_id: string | null
+          node_id: string
+          status: Database["public"]["Enums"]["task_status"]
+          title: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          instance_id?: string | null
+          node_id: string
+          status?: Database["public"]["Enums"]["task_status"]
+          title: string
+        }
+        Update: {
+          assigned_to?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          instance_id?: string | null
+          node_id?: string
+          status?: Database["public"]["Enums"]["task_status"]
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_tasks_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflows: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          flow_data: Json
+          id: string
+          name: string
+          status: Database["public"]["Enums"]["workflow_status"]
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          flow_data: Json
+          id?: string
+          name: string
+          status?: Database["public"]["Enums"]["workflow_status"]
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          flow_data?: Json
+          id?: string
+          name?: string
+          status?: Database["public"]["Enums"]["workflow_status"]
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -87,7 +268,22 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      approval_status: "pending" | "approved" | "rejected"
+      node_type:
+        | "start"
+        | "task"
+        | "approval"
+        | "condition"
+        | "automation"
+        | "end"
+      task_status: "pending" | "in_progress" | "completed" | "skipped"
+      workflow_instance_status:
+        | "pending"
+        | "in_progress"
+        | "completed"
+        | "rejected"
+        | "cancelled"
+      workflow_status: "draft" | "active" | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -214,6 +410,25 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      approval_status: ["pending", "approved", "rejected"],
+      node_type: [
+        "start",
+        "task",
+        "approval",
+        "condition",
+        "automation",
+        "end",
+      ],
+      task_status: ["pending", "in_progress", "completed", "skipped"],
+      workflow_instance_status: [
+        "pending",
+        "in_progress",
+        "completed",
+        "rejected",
+        "cancelled",
+      ],
+      workflow_status: ["draft", "active", "archived"],
+    },
   },
 } as const
