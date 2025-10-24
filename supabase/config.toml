@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.get-greeting]
 verify_jwt = false
+
+[functions.execute-workflow]
+verify_jwt = false

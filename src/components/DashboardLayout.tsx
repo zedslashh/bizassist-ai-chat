@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Bot, LayoutDashboard, Settings, Plus, LogOut, Menu } from "lucide-react";
+import { Bot, LayoutDashboard, Settings, Plus, LogOut, Menu, GitBranch } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useState } from "react";
 
@@ -11,6 +11,7 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const navItems = [
     { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
     { path: "/generator", label: "Create Assistant", icon: <Plus className="w-5 h-5" /> },
+    { path: "/workflows", label: "Workflows", icon: <GitBranch className="w-5 h-5" /> },
     { path: "/settings", label: "Settings", icon: <Settings className="w-5 h-5" /> },
   ];
 
