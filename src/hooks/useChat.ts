@@ -66,7 +66,25 @@ export const useChat = (orgId: string, language: string = "english") => {
             const { data: greetingData } = await supabase.functions.invoke('get-greeting', {
               body: { org_id: orgId, lang: language }
             });
-            const greeting = greetingData?.greeting || `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            let greeting = greetingData?.greeting || `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            
+            // Filter out system prompts that might leak through
+            const systemPromptPatterns = [
+              /you are a translation assistant/i,
+              /you are an? (ai|assistant|chatbot)/i,
+              /system:/i,
+              /instruction:/i
+            ];
+            
+            for (const pattern of systemPromptPatterns) {
+              greeting = greeting.replace(pattern, '').trim();
+            }
+            
+            // If greeting becomes empty after filtering, use default
+            if (!greeting) {
+              greeting = `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            }
+            
             await addBotMessage(newConv.id, greeting, language);
           } catch (err) {
             console.error("Error fetching greeting:", err);
