@@ -68,27 +68,37 @@ export const useChat = (orgId: string, language: string = "english") => {
             });
             let greeting = greetingData?.greeting || `Hello! Welcome to ${orgId}. How can I assist you today?`;
             
-            // Filter out system prompts that might leak through
+            // Filter out system prompts in English and Tamil
             const systemPromptPatterns = [
-              /you are a translation assistant/i,
+              /நீங்கள் ஒரு மொழிபெயர்ப்பு உதவியாளர்.*?2023 வரை.*?\./s,
+              /you are a translation assistant.*?october 2023\./is,
               /you are an? (ai|assistant|chatbot)/i,
               /system:/i,
-              /instruction:/i
+              /instruction:/i,
+              /translate.*?below.*?text/i
             ];
             
             for (const pattern of systemPromptPatterns) {
               greeting = greeting.replace(pattern, '').trim();
             }
             
+            // Remove any remaining newlines and extra spaces
+            greeting = greeting.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+            
             // If greeting becomes empty after filtering, use default
-            if (!greeting) {
-              greeting = `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            if (!greeting || greeting.length < 5) {
+              greeting = language === 'tamil' 
+                ? `வணக்கம்! ${orgId} க்கு வரவேற்கிறோம். நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?`
+                : `Hello! Welcome to ${orgId}. How can I assist you today?`;
             }
             
             await addBotMessage(newConv.id, greeting, language);
           } catch (err) {
             console.error("Error fetching greeting:", err);
-            await addBotMessage(newConv.id, `Hello! Welcome to ${orgId}. How can I assist you today?`, language);
+            const fallbackGreeting = language === 'tamil'
+              ? `வணக்கம்! ${orgId} க்கு வரவேற்கிறோம். நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?`
+              : `Hello! Welcome to ${orgId}. How can I assist you today?`;
+            await addBotMessage(newConv.id, fallbackGreeting, language);
           }
         }
       } catch (error) {
