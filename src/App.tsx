@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Generator from "./pages/Generator";
+import Chat from "./pages/Chat";
 import Workflows from "./pages/Workflows";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import NotFound from "./pages/NotFound";
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/generator" element={<Generator />} />
+          <Route path="/chat" element={<Chat />} />
           <Route path="/workflows" element={<Workflows />} />
           <Route path="/workflows/new" element={<WorkflowBuilder />} />
           <Route path="/workflows/:id" element={<WorkflowBuilder />} />
