@@ -18,7 +18,6 @@ const Generator = () => {
   const [integration, setIntegration] = useState("widget");
   const [languages, setLanguages] = useState<string[]>(["english"]);
   const [files, setFiles] = useState<File[]>([]);
-  const [telegramToken, setTelegramToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -46,15 +45,6 @@ const Generator = () => {
       toast({
         title: "Missing Information",
         description: "Please fill in organization name and upload at least one file",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (integration === "telegram" && !telegramToken) {
-      toast({
-        title: "Missing Telegram Token",
-        description: "Please provide your Telegram bot token",
         variant: "destructive",
       });
       return;
@@ -100,9 +90,10 @@ const Generator = () => {
       if (integration === "landing") {
         navigate("/chat", { state: { orgName, languages } });
       } else if (integration === "telegram") {
+        const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook`;
         toast({
-          title: "Telegram Integration Ready",
-          description: "Your bot is configured. Set up the webhook to start receiving messages.",
+          title: "Telegram Bot Configured",
+          description: `Send /start ${orgName} to your bot to begin chatting!`,
         });
       }
     } catch (error) {
@@ -123,7 +114,6 @@ const Generator = () => {
     setIntegration("widget");
     setLanguages(["english"]);
     setFiles([]);
-    setTelegramToken("");
     setSuccess(false);
   };
 
@@ -205,23 +195,6 @@ const Generator = () => {
                 </Button>
               </div>
             </div>
-
-            {/* Telegram Token */}
-            {integration === "telegram" && (
-              <div className="space-y-2">
-                <Label htmlFor="telegramToken">Telegram Bot Token *</Label>
-                <Input
-                  id="telegramToken"
-                  value={telegramToken}
-                  onChange={(e) => setTelegramToken(e.target.value)}
-                  placeholder="Enter your Telegram bot token"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Get your bot token from @BotFather on Telegram
-                </p>
-              </div>
-            )}
 
             {/* Languages */}
             <div className="space-y-2">
