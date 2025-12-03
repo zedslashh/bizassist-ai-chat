@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const BACKEND_API_URL = Deno.env.get("BACKEND_API_URL");
@@ -35,12 +36,73 @@ async function sendTelegramMessage(chatId: number, text: string) {
   });
 }
 
+async function checkFAQs(query: string, language: string = "english"): Promise<string | null> {
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+  
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !OPENAI_API_KEY) return null;
+  
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const searchColumn = language === "tamil" ? "q_ta" : "q_en";
+    
+    const { data: faqs } = await supabase
+      .from('faqs')
+      .select('*')
+      .textSearch(searchColumn, query.split(' ').join(' | '), { type: 'websearch' })
+      .limit(3);
+    
+    if (faqs && faqs.length > 0) {
+      const faqContext = faqs.map((faq: any) => 
+        `Q: ${language === "tamil" ? faq.q_ta : faq.q_en}\nA: ${language === "tamil" ? faq.a_ta : faq.a_en}`
+      ).join('\n\n');
+      
+      const matchResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'Given a user question and FAQ pairs, return the most relevant answer. If no FAQ matches well, respond with "NO_MATCH". Otherwise return only the answer text.' },
+            { role: 'user', content: `User Question: ${query}\n\nAvailable FAQs:\n${faqContext}` }
+          ],
+          temperature: 0.1,
+          max_tokens: 500,
+        }),
+      });
+      
+      if (matchResponse.ok) {
+        const matchData = await matchResponse.json();
+        const faqAnswer = matchData.choices?.[0]?.message?.content?.trim();
+        if (faqAnswer && faqAnswer !== "NO_MATCH") {
+          return faqAnswer;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking FAQs:', error);
+  }
+  
+  return null;
+}
+
 async function queryOpenAI(orgId: string, query: string, language: string = "english") {
   console.log(`Querying OpenAI for org: ${orgId}, lang: ${language}`);
   
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
   if (!OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY not configured');
+  }
+
+  // Check FAQs first
+  const faqAnswer = await checkFAQs(query, language);
+  if (faqAnswer) {
+    console.log('FAQ match found');
+    return faqAnswer;
   }
 
   try {
@@ -127,7 +189,7 @@ async function getGreeting(orgId: string, language: string = "english") {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o',
+          model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: 'You are a helpful assistant that translates text to Tamil.' },
             { role: 'user', content: `Translate to Tamil: ${englishGreeting}` }
