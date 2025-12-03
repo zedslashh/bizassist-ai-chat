@@ -11,11 +11,11 @@ serve(async (req) => {
   }
 
   try {
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     const BACKEND_URL = Deno.env.get('BACKEND_API_URL');
     
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY not configured');
+    if (!OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     const { org_id, query, top_k = 4, lang = "english" } = await req.json();
@@ -31,7 +31,7 @@ serve(async (req) => {
           org_id, 
           query, 
           top_k,
-          lang: "english" // Always get context in English, translate later if needed
+          lang: "english"
         }),
       });
       
@@ -54,35 +54,33 @@ serve(async (req) => {
       ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
       : query;
 
-    // Call Gemini API with streaming
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2048,
-          }
-        }),
-      }
-    );
+    // Call OpenAI API with streaming
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 2048,
+        stream: true,
+      }),
+    });
 
-    if (!geminiResponse.ok) {
-      const errorText = await geminiResponse.text();
-      console.error('Gemini API error:', errorText);
-      throw new Error(`Gemini API error: ${geminiResponse.status}`);
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('OpenAI API error:', errorText);
+      throw new Error(`OpenAI API error: ${openaiResponse.status}`);
     }
 
     // Stream response
-    const reader = geminiResponse.body?.getReader();
+    const reader = openaiResponse.body?.getReader();
     const decoder = new TextDecoder();
     
     if (!reader) {
@@ -97,13 +95,17 @@ serve(async (req) => {
       if (done) break;
       
       const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n').filter(line => line.trim());
+      const lines = chunk.split('\n').filter(line => line.trim().startsWith('data:'));
       
       for (const line of lines) {
+        const data = line.replace('data: ', '').trim();
+        if (data === '[DONE]') continue;
+        
         try {
-          const parsed = JSON.parse(line);
-          if (parsed.candidates?.[0]?.content?.parts?.[0]?.text) {
-            fullAnswer += parsed.candidates[0].content.parts[0].text;
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) {
+            fullAnswer += content;
           }
         } catch (e) {
           // Skip invalid JSON lines
