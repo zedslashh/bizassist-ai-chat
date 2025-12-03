@@ -11,10 +11,10 @@ serve(async (req) => {
   }
 
   try {
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     
-    if (!GEMINI_API_KEY) {
-      throw new Error('GEMINI_API_KEY not configured');
+    if (!OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     const { org_id, lang = "english" } = await req.json();
@@ -29,33 +29,28 @@ serve(async (req) => {
     
     const englishGreeting = `${timeOfDay}! Welcome to ${org_id} 👋. How can I assist you today?`;
     
-    // If Tamil requested, translate using Gemini
+    // If Tamil requested, translate using OpenAI
     if (lang === "tamil") {
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [{
-                  text: `Translate the following text to Tamil, making it natural and conversational:\n\n${englishGreeting}`
-                }]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 256,
-            }
-          }),
-        }
-      );
+      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant that translates text to Tamil.' },
+            { role: 'user', content: `Translate the following text to Tamil, making it natural and conversational:\n\n${englishGreeting}` }
+          ],
+          temperature: 0.3,
+          max_tokens: 256,
+        }),
+      });
 
-      if (geminiResponse.ok) {
-        const data = await geminiResponse.json();
-        const tamilGreeting = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (openaiResponse.ok) {
+        const data = await openaiResponse.json();
+        const tamilGreeting = data.choices?.[0]?.message?.content;
         
         if (tamilGreeting) {
           return new Response(JSON.stringify({ greeting: tamilGreeting.trim() }), {

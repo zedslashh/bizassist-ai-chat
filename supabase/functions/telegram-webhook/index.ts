@@ -35,12 +35,12 @@ async function sendTelegramMessage(chatId: number, text: string) {
   });
 }
 
-async function queryGemini(orgId: string, query: string, language: string = "english") {
-  console.log(`Querying Gemini for org: ${orgId}, lang: ${language}`);
+async function queryOpenAI(orgId: string, query: string, language: string = "english") {
+  console.log(`Querying OpenAI for org: ${orgId}, lang: ${language}`);
   
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-  if (!GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY not configured');
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY not configured');
   }
 
   try {
@@ -73,43 +73,40 @@ async function queryGemini(orgId: string, query: string, language: string = "eng
       : "You are BizAssistAI. Answer concisely using the provided documents.";
 
     const userPrompt = context
-      ? `${systemPrompt}\n\nDOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
-      : `${systemPrompt}\n\nQUESTION:\n${query}`;
+      ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
+      : query;
 
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: userPrompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1024,
-          }
-        }),
-      }
-    );
+    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024,
+      }),
+    });
 
-    if (!geminiResponse.ok) {
-      throw new Error(`Gemini API error: ${geminiResponse.status}`);
+    if (!openaiResponse.ok) {
+      throw new Error(`OpenAI API error: ${openaiResponse.status}`);
     }
 
-    const data = await geminiResponse.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response.";
+    const data = await openaiResponse.json();
+    return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
   } catch (error) {
-    console.error('Error querying Gemini:', error);
+    console.error('Error querying OpenAI:', error);
     throw error;
   }
 }
 
 async function getGreeting(orgId: string, language: string = "english") {
-  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
   
   try {
     const hour = new Date().getHours();
@@ -122,25 +119,27 @@ async function getGreeting(orgId: string, language: string = "english") {
     
     const englishGreeting = `${timeOfDay}! Welcome to ${orgId} 👋. How can I assist you today?`;
     
-    if (language === "tamil" && GEMINI_API_KEY) {
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [{ text: `Translate to Tamil: ${englishGreeting}` }]
-            }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 256 }
-          }),
-        }
-      );
+    if (language === "tamil" && OPENAI_API_KEY) {
+      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'You are a helpful assistant that translates text to Tamil.' },
+            { role: 'user', content: `Translate to Tamil: ${englishGreeting}` }
+          ],
+          temperature: 0.3,
+          max_tokens: 256,
+        }),
+      });
 
-      if (geminiResponse.ok) {
-        const data = await geminiResponse.json();
-        const tamilGreeting = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (openaiResponse.ok) {
+        const data = await openaiResponse.json();
+        const tamilGreeting = data.choices?.[0]?.message?.content;
         if (tamilGreeting) return tamilGreeting.trim();
       }
     }
@@ -173,8 +172,6 @@ serve(async (req) => {
     const userMessage = body.message.text;
     const userLanguage = body.message.from?.language_code?.includes('ta') ? 'tamil' : 'english';
 
-    // Extract org_id from the message (you can customize this logic)
-    // For now, we'll use a default or expect format like "/start orgname"
     let orgId = "default_org";
     
     if (userMessage.startsWith('/start')) {
@@ -183,7 +180,6 @@ serve(async (req) => {
         orgId = parts[1];
       }
       
-      // Send greeting
       const greeting = await getGreeting(orgId, userLanguage);
       await sendTelegramMessage(chatId, greeting);
       
@@ -192,9 +188,8 @@ serve(async (req) => {
       });
     }
 
-    // Query Gemini for an answer
     try {
-      const answer = await queryGemini(orgId, userMessage, userLanguage);
+      const answer = await queryOpenAI(orgId, userMessage, userLanguage);
       await sendTelegramMessage(chatId, answer);
     } catch (error) {
       console.error('Error processing query:', error);
