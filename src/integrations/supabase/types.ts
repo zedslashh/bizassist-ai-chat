@@ -41,6 +41,36 @@ export type Database = {
         }
         Relationships: []
       }
+      faqs: {
+        Row: {
+          a_en: string
+          a_ta: string
+          created_at: string | null
+          domain: string
+          id: number
+          q_en: string
+          q_ta: string
+        }
+        Insert: {
+          a_en: string
+          a_ta: string
+          created_at?: string | null
+          domain: string
+          id?: number
+          q_en: string
+          q_ta: string
+        }
+        Update: {
+          a_en?: string
+          a_ta?: string
+          created_at?: string | null
+          domain?: string
+          id?: number
+          q_en?: string
+          q_ta?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string

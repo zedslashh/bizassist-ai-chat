@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,6 +14,8 @@ serve(async (req) => {
   try {
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     const BACKEND_URL = Deno.env.get('BACKEND_API_URL');
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     
     if (!OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY not configured');
@@ -20,6 +23,65 @@ serve(async (req) => {
 
     const { org_id, query, top_k = 4, lang = "english" } = await req.json();
     console.log('Query received:', { org_id, query, lang });
+
+    // First, check FAQs for a quick answer
+    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      
+      // Search FAQs using text search
+      const searchColumn = lang === "tamil" ? "q_ta" : "q_en";
+      const answerColumn = lang === "tamil" ? "a_ta" : "a_en";
+      
+      // Try exact match first, then fuzzy search
+      const { data: faqs } = await supabase
+        .from('faqs')
+        .select('*')
+        .textSearch(searchColumn, query.split(' ').join(' | '), { type: 'websearch' })
+        .limit(3);
+      
+      if (faqs && faqs.length > 0) {
+        // Use OpenAI to find the best matching FAQ
+        const faqContext = faqs.map((faq: any) => 
+          `Q: ${lang === "tamil" ? faq.q_ta : faq.q_en}\nA: ${lang === "tamil" ? faq.a_ta : faq.a_en}`
+        ).join('\n\n');
+        
+        const matchResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { 
+                role: 'system', 
+                content: `You are a helpful assistant. Given a user question and FAQ pairs, return the most relevant answer. If no FAQ matches well, respond with "NO_MATCH". Otherwise return only the answer text.` 
+              },
+              { role: 'user', content: `User Question: ${query}\n\nAvailable FAQs:\n${faqContext}` }
+            ],
+            temperature: 0.1,
+            max_tokens: 500,
+          }),
+        });
+        
+        if (matchResponse.ok) {
+          const matchData = await matchResponse.json();
+          const faqAnswer = matchData.choices?.[0]?.message?.content?.trim();
+          
+          if (faqAnswer && faqAnswer !== "NO_MATCH") {
+            console.log('FAQ match found:', faqAnswer);
+            return new Response(JSON.stringify({ 
+              answer: faqAnswer,
+              retrieved_docs: [],
+              source: 'faq'
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+    }
 
     // Get context from backend vector DB
     let context = "";
@@ -54,7 +116,7 @@ serve(async (req) => {
       ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
       : query;
 
-    // Call OpenAI API with streaming
+    // Call OpenAI API
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -69,7 +131,6 @@ serve(async (req) => {
         ],
         temperature: 0.7,
         max_tokens: 2048,
-        stream: true,
       }),
     });
 
@@ -79,45 +140,15 @@ serve(async (req) => {
       throw new Error(`OpenAI API error: ${openaiResponse.status}`);
     }
 
-    // Stream response
-    const reader = openaiResponse.body?.getReader();
-    const decoder = new TextDecoder();
-    
-    if (!reader) {
-      throw new Error('No response body');
-    }
-
-    let fullAnswer = '';
-    
-    // Read stream and accumulate response
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split('\n').filter(line => line.trim().startsWith('data:'));
-      
-      for (const line of lines) {
-        const data = line.replace('data: ', '').trim();
-        if (data === '[DONE]') continue;
-        
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
-            fullAnswer += content;
-          }
-        } catch (e) {
-          // Skip invalid JSON lines
-        }
-      }
-    }
+    const data = await openaiResponse.json();
+    const fullAnswer = data.choices?.[0]?.message?.content || "";
 
     console.log('Generated answer:', fullAnswer);
 
     return new Response(JSON.stringify({ 
       answer: fullAnswer || "I couldn't generate a response.",
-      retrieved_docs: []
+      retrieved_docs: [],
+      source: 'openai'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
