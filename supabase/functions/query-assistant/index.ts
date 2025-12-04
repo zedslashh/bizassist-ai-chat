@@ -28,22 +28,22 @@ serve(async (req) => {
     if (SUPABASE_URL && SUPABASE_ANON_KEY) {
       const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       
-      // Search FAQs using text search
-      const searchColumn = lang === "tamil" ? "q_ta" : "q_en";
-      const answerColumn = lang === "tamil" ? "a_ta" : "a_en";
+      // Search FAQs in both English and Tamil columns for better matching
       
-      // Try exact match first, then fuzzy search
+      // Try searching in English column first (better text search support)
       const { data: faqs } = await supabase
         .from('faqs')
         .select('*')
-        .textSearch(searchColumn, query.split(' ').join(' | '), { type: 'websearch' })
-        .limit(3);
+        .or(`q_en.ilike.%${query.substring(0, 50)}%,q_ta.ilike.%${query.substring(0, 50)}%`)
+        .limit(5);
+      
+      console.log('FAQ search results:', faqs?.length || 0);
       
       if (faqs && faqs.length > 0) {
-        // Use OpenAI to find the best matching FAQ
+        // Use OpenAI to find the best matching FAQ and get proper answer
         const faqContext = faqs.map((faq: any) => 
-          `Q: ${lang === "tamil" ? faq.q_ta : faq.q_en}\nA: ${lang === "tamil" ? faq.a_ta : faq.a_en}`
-        ).join('\n\n');
+          `Q_EN: ${faq.q_en}\nA_EN: ${faq.a_en}\nQ_TA: ${faq.q_ta}\nA_TA: ${faq.a_ta}`
+        ).join('\n\n---\n\n');
         
         const matchResponse = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -56,7 +56,15 @@ serve(async (req) => {
             messages: [
               { 
                 role: 'system', 
-                content: `You are a helpful assistant. Given a user question and FAQ pairs, return the most relevant answer. If no FAQ matches well, respond with "NO_MATCH". Otherwise return only the answer text.` 
+                content: `You are a FAQ matcher. Given a user question and FAQ pairs (with English and Tamil versions), find the most relevant FAQ. 
+                
+If a FAQ matches the question well:
+- If requested language is "tamil", return ONLY the Tamil answer (A_TA) - no English text at all
+- If requested language is "english", return ONLY the English answer (A_EN)
+
+If no FAQ matches well, respond with exactly "NO_MATCH" (nothing else).
+
+Requested language: ${lang}` 
               },
               { role: 'user', content: `User Question: ${query}\n\nAvailable FAQs:\n${faqContext}` }
             ],
@@ -69,7 +77,7 @@ serve(async (req) => {
           const matchData = await matchResponse.json();
           const faqAnswer = matchData.choices?.[0]?.message?.content?.trim();
           
-          if (faqAnswer && faqAnswer !== "NO_MATCH") {
+          if (faqAnswer && faqAnswer !== "NO_MATCH" && !faqAnswer.includes("NO_MATCH")) {
             console.log('FAQ match found:', faqAnswer);
             return new Response(JSON.stringify({ 
               answer: faqAnswer,
@@ -107,16 +115,14 @@ serve(async (req) => {
       console.error('Error fetching context:', error);
     }
 
-    // Build system prompt
-    const systemPrompt = lang === "tamil"
-      ? "நீங்கள் BizAssistAI. வழங்கப்பட்ட ஆவணங்களைப் பயன்படுத்தி சுருக்கமாக பதிலளிக்கவும். கேள்விக்கு பதிலளிக்க முடியவில்லை என்றால், மன்னிப்புக் கேட்டு கேள்வி உங்கள் எல்லைக்கு வெளியே என்று பணிவுடன் கூறவும்."
-      : "You are BizAssistAI. Answer concisely using the provided documents. If you cannot answer the question, apologize and politely say that the question is outside your scope.";
+    // Build system prompt - always generate in English first for better quality
+    const systemPrompt = "You are BizAssistAI. Answer concisely using the provided documents. If you cannot answer the question, apologize and politely say that the question is outside your scope.";
 
     const userPrompt = context
       ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
       : query;
 
-    // Call OpenAI API
+    // Call OpenAI API to generate answer
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -141,9 +147,38 @@ serve(async (req) => {
     }
 
     const data = await openaiResponse.json();
-    const fullAnswer = data.choices?.[0]?.message?.content || "";
+    let fullAnswer = data.choices?.[0]?.message?.content || "";
 
-    console.log('Generated answer:', fullAnswer);
+    console.log('Generated answer (English):', fullAnswer);
+
+    // If Tamil requested, translate the answer
+    if (lang === "tamil" && fullAnswer) {
+      const translateResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: 'You are a translator. Translate the following text to Tamil. Return ONLY the Tamil translation, nothing else. Do not include any English text or explanations.' },
+            { role: 'user', content: fullAnswer }
+          ],
+          temperature: 0.3,
+          max_tokens: 2048,
+        }),
+      });
+
+      if (translateResponse.ok) {
+        const translateData = await translateResponse.json();
+        const tamilAnswer = translateData.choices?.[0]?.message?.content;
+        if (tamilAnswer) {
+          fullAnswer = tamilAnswer.trim();
+          console.log('Translated to Tamil:', fullAnswer);
+        }
+      }
+    }
 
     return new Response(JSON.stringify({ 
       answer: fullAnswer || "I couldn't generate a response.",
