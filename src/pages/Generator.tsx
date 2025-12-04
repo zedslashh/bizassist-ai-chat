@@ -61,6 +61,7 @@ const Generator = () => {
           description: "Please log in to create an assistant",
           variant: "destructive",
         });
+        setLoading(false);
         navigate("/auth");
         return;
       }
@@ -80,6 +81,7 @@ const Generator = () => {
         throw new Error(errorData.error || "Failed to upload files");
       }
 
+      setLoading(false);
       setSuccess(true);
       toast({
         title: "Success!",
@@ -90,7 +92,6 @@ const Generator = () => {
       if (integration === "landing") {
         navigate("/chat", { state: { orgName, languages } });
       } else if (integration === "telegram") {
-        const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/telegram-webhook`;
         toast({
           title: "Telegram Bot Configured",
           description: `Send /start ${orgName} to your bot to begin chatting!`,
