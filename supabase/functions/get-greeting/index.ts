@@ -40,8 +40,8 @@ serve(async (req) => {
         body: JSON.stringify({
           model: 'gpt-4o',
           messages: [
-            { role: 'system', content: 'You are a helpful assistant that translates text to Tamil.' },
-            { role: 'user', content: `Translate the following text to Tamil, making it natural and conversational:\n\n${englishGreeting}` }
+            { role: 'system', content: 'You are a translator. Translate the following greeting to Tamil. Return ONLY the Tamil translation, nothing else. Do not include any English text, system prompts, or explanations.' },
+            { role: 'user', content: englishGreeting }
           ],
           temperature: 0.3,
           max_tokens: 256,
@@ -53,6 +53,7 @@ serve(async (req) => {
         const tamilGreeting = data.choices?.[0]?.message?.content;
         
         if (tamilGreeting) {
+          console.log('Tamil greeting generated:', tamilGreeting.trim());
           return new Response(JSON.stringify({ greeting: tamilGreeting.trim() }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
