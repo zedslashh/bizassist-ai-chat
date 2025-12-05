@@ -15,6 +15,9 @@ const Index = () => {
             <span className="text-2xl font-bold text-gradient">BizAssistAI</span>
           </div>
           <div className="flex items-center gap-4">
+            <Button variant="ghost" onClick={() => navigate("/pricing")}>
+              Pricing
+            </Button>
             <Button variant="ghost" onClick={() => navigate("/auth")}>
               Sign In
             </Button>
