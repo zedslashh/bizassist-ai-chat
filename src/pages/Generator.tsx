@@ -1,31 +1,65 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2, CheckCircle, MessageCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Upload, Loader2, CheckCircle, MessageCircle, CreditCard } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/DashboardLayout";
 import ChatWidget from "@/components/ChatWidget";
 import { supabase } from "@/integrations/supabase/client";
 
+// Pricing info for display
+const PRICING = {
+  widget: { name: "Website Widget", price: "$9.99/month" },
+  telegram: { name: "Telegram Bot", price: "$15.00/month" },
+  landing: { name: "Landing Page", price: "$9.99/month" },
+};
+
 const Generator = () => {
   const [orgName, setOrgName] = useState("");
   const [email, setEmail] = useState("");
   const [vertical, setVertical] = useState("");
-  const [integration, setIntegration] = useState("widget");
+  const [integration, setIntegration] = useState<"widget" | "telegram" | "landing">("widget");
   const [languages, setLanguages] = useState<string[]>(["english"]);
   const [files, setFiles] = useState<File[]>([]);
   const [telegramBotUsername, setTelegramBotUsername] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
 
   const VERTICALS = ["supermarket", "travel", "finance", "beauty", "textile", "health"];
+
+  // Handle successful payment redirect
+  useEffect(() => {
+    const successParam = searchParams.get("success");
+    const typeParam = searchParams.get("type") as "widget" | "telegram" | "landing" | null;
+    const orgParam = searchParams.get("org");
+
+    if (successParam === "true" && typeParam && orgParam) {
+      setSuccess(true);
+      setIntegration(typeParam);
+      setOrgName(decodeURIComponent(orgParam));
+      toast({
+        title: "Payment Successful!",
+        description: "Your subscription is active. Complete the setup below.",
+      });
+    }
+
+    if (searchParams.get("canceled") === "true") {
+      toast({
+        title: "Payment Canceled",
+        description: "Your subscription was not activated.",
+        variant: "destructive",
+      });
+    }
+  }, [searchParams, toast]);
 
   const toggleLanguage = (lang: string) => {
     setLanguages(prev =>
@@ -36,6 +70,51 @@ const Generator = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (!orgName) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter your organization name first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCheckoutLoading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to subscribe",
+          variant: "destructive",
+        });
+        navigate("/auth");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { integrationType: integration, orgName },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, "_blank");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start checkout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCheckoutLoading(false);
     }
   };
 
@@ -54,7 +133,6 @@ const Generator = () => {
     setLoading(true);
 
     try {
-      // Check if user is authenticated
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({
@@ -67,7 +145,6 @@ const Generator = () => {
         return;
       }
 
-      // Upload files via edge function
       const formData = new FormData();
       formData.append("org_id", orgName);
       files.forEach(file => formData.append("files", file));
@@ -89,7 +166,6 @@ const Generator = () => {
         description: "Your AI assistant has been created successfully",
       });
 
-      // Navigate based on integration type
       if (integration === "landing") {
         navigate("/chat", { state: { orgName, languages } });
       } else if (integration === "telegram") {
@@ -172,35 +248,26 @@ const Generator = () => {
               </Select>
             </div>
 
-            {/* Integration Type */}
+            {/* Integration Type with Pricing */}
             <div className="space-y-2">
               <Label>Integration Type</Label>
               <div className="grid grid-cols-3 gap-4">
-                <Button
-                  type="button"
-                  variant={integration === "widget" ? "default" : "outline"}
-                  onClick={() => setIntegration("widget")}
-                >
-                  Website Widget
-                </Button>
-                <Button
-                  type="button"
-                  variant={integration === "landing" ? "default" : "outline"}
-                  onClick={() => setIntegration("landing")}
-                >
-                  Landing Page
-                </Button>
-                <Button
-                  type="button"
-                  variant={integration === "telegram" ? "default" : "outline"}
-                  onClick={() => setIntegration("telegram")}
-                >
-                  Telegram Bot
-                </Button>
+                {(Object.keys(PRICING) as Array<keyof typeof PRICING>).map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={integration === type ? "default" : "outline"}
+                    onClick={() => setIntegration(type)}
+                    className="flex flex-col h-auto py-3"
+                  >
+                    <span>{PRICING[type].name}</span>
+                    <span className="text-xs opacity-75">{PRICING[type].price}</span>
+                  </Button>
+                ))}
               </div>
             </div>
 
-            {/* Telegram Bot Username - only show when Telegram is selected */}
+            {/* Telegram Bot Username */}
             {integration === "telegram" && (
               <div className="space-y-2">
                 <Label htmlFor="telegramBot">Telegram Bot Username *</Label>
@@ -268,40 +335,64 @@ const Generator = () => {
               )}
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex gap-4 pt-4">
-              <Button
-                type="submit"
-                className="flex-1 gradient-primary"
-                disabled={loading || success}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                    Creating Assistant...
-                  </>
-                ) : success ? (
-                  <>
-                    <CheckCircle className="mr-2 w-4 h-4" />
-                    Created Successfully!
-                  </>
-                ) : (
-                  "Create Assistant"
-                )}
-              </Button>
+            {/* Subscribe Button */}
+            <div className="pt-4 border-t">
               <Button
                 type="button"
-                variant="outline"
-                onClick={handleReset}
-                disabled={loading}
+                onClick={handleCheckout}
+                className="w-full gradient-primary"
+                disabled={checkoutLoading || !orgName}
               >
-                Reset
+                {checkoutLoading ? (
+                  <>
+                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                    Starting Checkout...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="mr-2 w-4 h-4" />
+                    Subscribe to {PRICING[integration].name} - {PRICING[integration].price}
+                  </>
+                )}
               </Button>
+              <p className="text-xs text-center text-muted-foreground mt-2">
+                You'll be redirected to Stripe to complete your subscription
+              </p>
             </div>
+
+            {/* Create Assistant Button - only show after successful payment */}
+            {success && (
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <Button
+                    type="submit"
+                    className="flex-1"
+                    disabled={loading || files.length === 0}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                        Creating Assistant...
+                      </>
+                    ) : (
+                      "Complete Setup - Upload Documents"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleReset}
+                    disabled={loading}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            )}
           </form>
 
           {/* Chat Widget Preview */}
-          {success && integration === "widget" && (
+          {success && integration === "widget" && files.length > 0 && (
             <div className="mt-8 p-6 border-t">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-full bg-success/10">
@@ -319,7 +410,7 @@ const Generator = () => {
           )}
 
           {/* Telegram Bot Success */}
-          {success && integration === "telegram" && (
+          {success && integration === "telegram" && files.length > 0 && (
             <div className="mt-8 p-6 border-t">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-full bg-success/10">
