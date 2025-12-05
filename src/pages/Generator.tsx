@@ -11,11 +11,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import ChatWidget from "@/components/ChatWidget";
 import { supabase } from "@/integrations/supabase/client";
 
-// Pricing info for display
-const PRICING = {
-  widget: { name: "Website Widget", price: "$9.99/month" },
-  telegram: { name: "Telegram Bot", price: "$15.00/month" },
-  landing: { name: "Landing Page", price: "$9.99/month" },
+const INTEGRATION_NAMES: Record<string, string> = {
+  widget: "Website Widget",
+  telegram: "Telegram Bot",
+  landing: "Landing Page",
 };
 
 const Generator = () => {
@@ -248,20 +247,18 @@ const Generator = () => {
               </Select>
             </div>
 
-            {/* Integration Type with Pricing */}
+            {/* Integration Type */}
             <div className="space-y-2">
               <Label>Integration Type</Label>
               <div className="grid grid-cols-3 gap-4">
-                {(Object.keys(PRICING) as Array<keyof typeof PRICING>).map((type) => (
+                {(["widget", "telegram", "landing"] as const).map((type) => (
                   <Button
                     key={type}
                     type="button"
                     variant={integration === type ? "default" : "outline"}
                     onClick={() => setIntegration(type)}
-                    className="flex flex-col h-auto py-3"
                   >
-                    <span>{PRICING[type].name}</span>
-                    <span className="text-xs opacity-75">{PRICING[type].price}</span>
+                    {INTEGRATION_NAMES[type]}
                   </Button>
                 ))}
               </div>
@@ -351,12 +348,12 @@ const Generator = () => {
                 ) : (
                   <>
                     <CreditCard className="mr-2 w-4 h-4" />
-                    Subscribe to {PRICING[integration].name} - {PRICING[integration].price}
+                    Subscribe to {INTEGRATION_NAMES[integration]}
                   </>
                 )}
               </Button>
               <p className="text-xs text-center text-muted-foreground mt-2">
-                You'll be redirected to Stripe to complete your subscription
+                You'll be redirected to Stripe. <a href="/pricing" className="text-primary underline">View pricing</a>
               </p>
             </div>
 

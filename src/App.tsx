@@ -10,6 +10,7 @@ import Generator from "./pages/Generator";
 import Chat from "./pages/Chat";
 import Workflows from "./pages/Workflows";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
+import Pricing from "./pages/Pricing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/generator" element={<Generator />} />
