@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Loader2, CheckCircle, MessageCircle, CreditCard } from "lucide-react";
+import { Upload, Loader2, CheckCircle, MessageCircle } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -26,7 +26,6 @@ const Generator = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [telegramBotUsername, setTelegramBotUsername] = useState("");
   const [loading, setLoading] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const navigate = useNavigate();
@@ -69,51 +68,6 @@ const Generator = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles(Array.from(e.target.files));
-    }
-  };
-
-  const handleCheckout = async () => {
-    if (!orgName) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter your organization name first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setCheckoutLoading(true);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "Authentication Required",
-          description: "Please log in to subscribe",
-          variant: "destructive",
-        });
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: { integrationType: integration, orgName },
-      });
-
-      if (error) throw error;
-
-      if (data?.url) {
-        window.open(data.url, "_blank");
-      }
-    } catch (error) {
-      console.error("Checkout error:", error);
-      toast({
-        title: "Error",
-        description: "Failed to start checkout. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setCheckoutLoading(false);
     }
   };
 
@@ -332,60 +286,31 @@ const Generator = () => {
               )}
             </div>
 
-            {/* Subscribe Button */}
-            <div className="pt-4 border-t">
+            {/* Create Assistant Button */}
+            <div className="flex gap-4">
               <Button
-                type="button"
-                onClick={handleCheckout}
-                className="w-full gradient-primary"
-                disabled={checkoutLoading || !orgName}
+                type="submit"
+                className="flex-1 gradient-primary"
+                disabled={loading || files.length === 0}
               >
-                {checkoutLoading ? (
+                {loading ? (
                   <>
                     <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                    Starting Checkout...
+                    Creating Assistant...
                   </>
                 ) : (
-                  <>
-                    <CreditCard className="mr-2 w-4 h-4" />
-                    Subscribe to {INTEGRATION_NAMES[integration]}
-                  </>
+                  "Create Assistant"
                 )}
               </Button>
-              <p className="text-xs text-center text-muted-foreground mt-2">
-                You'll be redirected to Stripe. <a href="/pricing" className="text-primary underline">View pricing</a>
-              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleReset}
+                disabled={loading}
+              >
+                Reset
+              </Button>
             </div>
-
-            {/* Create Assistant Button - only show after successful payment */}
-            {success && (
-              <div className="space-y-4">
-                <div className="flex gap-4">
-                  <Button
-                    type="submit"
-                    className="flex-1"
-                    disabled={loading || files.length === 0}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                        Creating Assistant...
-                      </>
-                    ) : (
-                      "Complete Setup - Upload Documents"
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleReset}
-                    disabled={loading}
-                  >
-                    Reset
-                  </Button>
-                </div>
-              </div>
-            )}
           </form>
 
           {/* Chat Widget Preview */}
