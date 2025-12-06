@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Check, Bot, ArrowRight } from "lucide-react";
+import { Check, Bot, ArrowRight, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const PLANS = [
   {
@@ -17,7 +20,7 @@ const PLANS = [
       "Document-based responses",
       "Real-time analytics",
     ],
-    type: "widget",
+    type: "widget" as const,
   },
   {
     name: "Landing Page",
@@ -32,7 +35,7 @@ const PLANS = [
       "Document-based responses",
       "Real-time analytics",
     ],
-    type: "landing",
+    type: "landing" as const,
     popular: true,
   },
   {
@@ -48,12 +51,49 @@ const PLANS = [
       "Document-based responses",
       "Real-time analytics",
     ],
-    type: "telegram",
+    type: "telegram" as const,
   },
 ];
 
 const Pricing = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleSubscribe = async (planType: "widget" | "telegram" | "landing") => {
+    setLoadingPlan(planType);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to subscribe",
+        });
+        navigate("/auth");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: { integrationType: planType },
+      });
+
+      if (error) throw error;
+
+      if (data?.url) {
+        window.open(data.url, "_blank");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start checkout. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingPlan(null);
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -120,11 +160,19 @@ const Pricing = () => {
                 </ul>
 
                 <Button
-                  onClick={() => navigate("/auth")}
+                  onClick={() => handleSubscribe(plan.type)}
                   className={`w-full ${plan.popular ? "gradient-primary" : ""}`}
                   variant={plan.popular ? "default" : "outline"}
+                  disabled={loadingPlan === plan.type}
                 >
-                  Get Started
+                  {loadingPlan === plan.type ? (
+                    <>
+                      <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    "Subscribe Now"
+                  )}
                 </Button>
               </Card>
             ))}
