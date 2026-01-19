@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Bot, BarChart3, Globe, Zap, Shield, MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -135,7 +136,7 @@ const Index = () => {
   );
 };
 
-const FeatureCard = ({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
+const FeatureCard = memo(({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
   <div className="p-6 rounded-2xl border bg-card hover:shadow-lg transition-all duration-300 hover:-translate-y-1 animate-slide-up">
     <div className="w-16 h-16 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-4">
       {icon}
@@ -143,6 +144,8 @@ const FeatureCard = ({ icon, title, description }: { icon: React.ReactNode; titl
     <h3 className="text-xl font-semibold mb-2">{title}</h3>
     <p className="text-muted-foreground">{description}</p>
   </div>
-);
+));
+
+FeatureCard.displayName = "FeatureCard";
 
 export default Index;
