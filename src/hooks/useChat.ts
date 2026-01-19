@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,9 +25,41 @@ export const useChat = (orgId: string, language: string = "english") => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const initRef = useRef(false);
+
+  const addBotMessage = useCallback(async (convId: string, content: string, lang: string) => {
+    try {
+      await supabase.from("messages").insert({
+        conversation_id: convId,
+        role: "bot",
+        content,
+        language: lang,
+      });
+    } catch (error) {
+      console.error("Error adding bot message:", error);
+    }
+  }, []);
+
+  const loadMessages = useCallback(async (convId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+      setMessages((data || []) as Message[]);
+    } catch (error) {
+      console.error("Error loading messages:", error);
+    }
+  }, []);
 
   // Create or get conversation
   useEffect(() => {
+    if (!orgId || initRef.current) return;
+    initRef.current = true;
+
     const initConversation = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -36,7 +68,7 @@ export const useChat = (orgId: string, language: string = "english") => {
         // Check for existing conversation
         const { data: existingConv } = await supabase
           .from("conversations")
-          .select("*")
+          .select("id")
           .eq("org_id", orgId)
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
@@ -55,7 +87,7 @@ export const useChat = (orgId: string, language: string = "english") => {
               user_id: user.id,
               language,
             })
-            .select()
+            .select("id")
             .single();
 
           if (error) throw error;
@@ -68,7 +100,7 @@ export const useChat = (orgId: string, language: string = "english") => {
             });
             let greeting = greetingData?.greeting || `Hello! Welcome to ${orgId}. How can I assist you today?`;
             
-            // Filter out system prompts in English and Tamil
+            // Filter out system prompts
             const systemPromptPatterns = [
               /நீங்கள் ஒரு மொழிபெயர்ப்பு உதவியாளர்.*?2023 வரை.*?\./s,
               /you are a translation assistant.*?october 2023\./is,
@@ -82,10 +114,8 @@ export const useChat = (orgId: string, language: string = "english") => {
               greeting = greeting.replace(pattern, '').trim();
             }
             
-            // Remove any remaining newlines and extra spaces
             greeting = greeting.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
             
-            // If greeting becomes empty after filtering, use default
             if (!greeting || greeting.length < 5) {
               greeting = language === 'tamil' 
                 ? `வணக்கம்! ${orgId} க்கு வரவேற்கிறோம். நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?`
@@ -106,10 +136,8 @@ export const useChat = (orgId: string, language: string = "english") => {
       }
     };
 
-    if (orgId) {
-      initConversation();
-    }
-  }, [orgId, language]);
+    initConversation();
+  }, [orgId, language, addBotMessage, loadMessages]);
 
   // Subscribe to realtime messages
   useEffect(() => {
@@ -136,37 +164,7 @@ export const useChat = (orgId: string, language: string = "english") => {
     };
   }, [conversationId]);
 
-  const loadMessages = async (convId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", convId)
-        .order("created_at", { ascending: true });
-
-      if (error) throw error;
-      setMessages((data || []) as Message[]);
-    } catch (error) {
-      console.error("Error loading messages:", error);
-    }
-  };
-
-  const addBotMessage = async (convId: string, content: string, lang: string) => {
-    try {
-      const { error } = await supabase.from("messages").insert({
-        conversation_id: convId,
-        role: "bot",
-        content,
-        language: lang,
-      });
-
-      if (error) throw error;
-    } catch (error) {
-      console.error("Error adding bot message:", error);
-    }
-  };
-
-  const sendMessage = async (content: string) => {
+  const sendMessage = useCallback(async (content: string) => {
     if (!conversationId || !content.trim()) return;
 
     setLoading(true);
@@ -193,7 +191,6 @@ export const useChat = (orgId: string, language: string = "english") => {
 
       if (error) throw error;
       
-      // Save bot response
       await addBotMessage(conversationId, data?.answer || "I couldn't find an answer.", language);
     } catch (error) {
       console.error("Error sending message:", error);
@@ -205,7 +202,7 @@ export const useChat = (orgId: string, language: string = "english") => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [conversationId, orgId, language, addBotMessage, toast]);
 
   return {
     messages,
