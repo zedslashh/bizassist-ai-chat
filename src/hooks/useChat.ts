@@ -20,7 +20,7 @@ export interface Conversation {
   updated_at: string;
 }
 
-export const useChat = (orgId: string, language: string = "english") => {
+export const useChat = (orgId: string, language: string = "english", domain: string = "") => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -186,6 +186,7 @@ export const useChat = (orgId: string, language: string = "english") => {
           query: content,
           top_k: 4,
           lang: language,
+          domain,
         }
       });
 
