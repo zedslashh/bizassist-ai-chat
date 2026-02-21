@@ -120,7 +120,7 @@ const Generator = () => {
       });
 
       if (integration === "landing") {
-        navigate("/chat", { state: { orgName, languages } });
+        navigate("/chat", { state: { orgName, languages, vertical } });
       } else if (integration === "telegram") {
         toast({
           title: "Telegram Bot Configured",
@@ -327,7 +327,7 @@ const Generator = () => {
                   </p>
                 </div>
               </div>
-              <ChatWidget orgName={orgName} language={languages[0]} />
+              <ChatWidget orgName={orgName} language={languages[0]} domain={vertical} />
             </div>
           )}
 

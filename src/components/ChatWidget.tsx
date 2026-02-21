@@ -10,12 +10,13 @@ import { motion, AnimatePresence } from "framer-motion";
 interface ChatWidgetProps {
   orgName: string;
   language?: string;
+  domain?: string;
 }
 
-const ChatWidget = ({ orgName, language = "english" }: ChatWidgetProps) => {
+const ChatWidget = ({ orgName, language = "english", domain = "" }: ChatWidgetProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
-  const { messages, loading, sendMessage } = useChat(orgName, language);
+  const { messages, loading, sendMessage } = useChat(orgName, language, domain);
 
   const handleSend = async () => {
     if (!input.trim()) return;

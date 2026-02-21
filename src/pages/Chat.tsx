@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { Send, Loader2, Bot } from "lucide-react";
+import { Send, Loader2, Bot, PhoneCall } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -10,9 +10,9 @@ import { motion } from "framer-motion";
 
 const Chat = () => {
   const location = useLocation();
-  const { orgName = "BizAssistAI", languages = ["english"] } = location.state || {};
+  const { orgName = "BizAssistAI", languages = ["english"], vertical = "" } = location.state || {};
   const [input, setInput] = useState("");
-  const { messages, loading, sendMessage } = useChat(orgName, languages[0]);
+  const { messages, loading, sendMessage } = useChat(orgName, languages[0], vertical);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -69,6 +69,20 @@ const Chat = () => {
                     }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "bot" && (msg.content.includes("connect with a live agent") || msg.content.includes("நேரடி முகவருடன் இணைய")) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 gap-2"
+                        onClick={() => {
+                          // Escalation action - could open email, phone, or ticket system
+                          window.open(`mailto:support@${orgName.toLowerCase().replace(/\s+/g, '')}.com?subject=Customer Support Request`, '_blank');
+                        }}
+                      >
+                        <PhoneCall className="h-3 w-3" />
+                        Connect to Agent
+                      </Button>
+                    )}
                   </div>
                 </motion.div>
               ))}
