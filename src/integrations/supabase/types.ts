@@ -109,6 +109,56 @@ export type Database = {
           },
         ]
       }
+      support_tickets: {
+        Row: {
+          contact_type: string
+          contact_value: string
+          conversation_id: string | null
+          created_at: string
+          domain: string | null
+          id: number
+          org_id: string
+          query_summary: string | null
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          contact_type: string
+          contact_value: string
+          conversation_id?: string | null
+          created_at?: string
+          domain?: string | null
+          id?: number
+          org_id: string
+          query_summary?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          contact_type?: string
+          contact_value?: string
+          conversation_id?: string | null
+          created_at?: string
+          domain?: string | null
+          id?: number
+          org_id?: string
+          query_summary?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null
