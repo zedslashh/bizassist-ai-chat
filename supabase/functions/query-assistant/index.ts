@@ -41,8 +41,10 @@ serve(async (req) => {
 Determine if the user's question is related to the "${domain}" domain or general business/customer service topics.
 Reply with ONLY "IN_SCOPE" or "OUT_OF_SCOPE". Nothing else.
 
-Examples of IN_SCOPE: questions about products, services, policies, hours, pricing, delivery, returns, bookings, appointments — anything a ${domain} business customer might ask.
-Examples of OUT_OF_SCOPE: questions completely unrelated to ${domain} (e.g., asking a supermarket bot about travel visas, or asking a health bot about fabric printing).`
+IMPORTANT: Generic greetings (hello, hi, hey, good morning, thanks, etc.), general conversation starters, pleasantries, and simple acknowledgments should ALWAYS be classified as "IN_SCOPE".
+
+Examples of IN_SCOPE: greetings, thank you, yes, no, ok, questions about products, services, policies, hours, pricing, delivery, returns, bookings, appointments — anything a ${domain} business customer might ask, including general chit-chat.
+Examples of OUT_OF_SCOPE: questions that are clearly and specifically about a completely different domain (e.g., asking a supermarket bot about travel visas, or asking a health bot about fabric printing).`
             },
             { role: 'user', content: query }
           ],
@@ -208,7 +210,9 @@ ${lang === "tamil" ? 'If escalating, say: "இந்தக் கேள்வி
 
     // Check if response indicates escalation
     const isEscalation = fullAnswer.includes("connect with a live agent") || 
-                         fullAnswer.includes("நேரடி முகவருடன் இணைய");
+                          fullAnswer.includes("நேரடி முகவருடன் இணைய") ||
+                          fullAnswer.includes("live agent") ||
+                          fullAnswer.includes("further assistance");
 
     // If Tamil requested and not already in Tamil, translate
     if (lang === "tamil" && fullAnswer && !isEscalation) {

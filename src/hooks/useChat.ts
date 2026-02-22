@@ -77,7 +77,7 @@ export const useChat = (orgId: string, language: string = "english", domain: str
 
         if (existingConv) {
           setConversationId(existingConv.id);
-          loadMessages(existingConv.id);
+          await loadMessages(existingConv.id);
         } else {
           // Create new conversation
           const { data: newConv, error } = await supabase
@@ -123,12 +123,14 @@ export const useChat = (orgId: string, language: string = "english", domain: str
             }
             
             await addBotMessage(newConv.id, greeting, language);
+            await loadMessages(newConv.id);
           } catch (err) {
             console.error("Error fetching greeting:", err);
             const fallbackGreeting = language === 'tamil'
               ? `வணக்கம்! ${orgId} க்கு வரவேற்கிறோம். நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?`
               : `Hello! Welcome to ${orgId}. How can I assist you today?`;
             await addBotMessage(newConv.id, fallbackGreeting, language);
+            await loadMessages(newConv.id);
           }
         }
       } catch (error) {
