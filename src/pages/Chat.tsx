@@ -69,14 +69,19 @@ const Chat = () => {
                     }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                    {msg.role === "bot" && (msg.content.includes("connect with a live agent") || msg.content.includes("நேரடி முகவருடன் இணைய")) && (
+                    {msg.role === "bot" && (
+                      msg.content.includes("connect with a live agent") || 
+                      msg.content.includes("நேரடி முகவருடன் இணைய") ||
+                      msg.content.includes("live agent") ||
+                      msg.content.includes("further assistance")
+                    ) && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="mt-3 gap-2"
                         onClick={() => {
-                          // Escalation action - could open email, phone, or ticket system
-                          window.open(`mailto:support@${orgName.toLowerCase().replace(/\s+/g, '')}.com?subject=Customer Support Request`, '_blank');
+                          const email = `support@${orgName.toLowerCase().replace(/\s+/g, '')}.com`;
+                          window.location.href = `mailto:${email}?subject=Customer Support Request&body=I need help with my query.`;
                         }}
                       >
                         <PhoneCall className="h-3 w-3" />
