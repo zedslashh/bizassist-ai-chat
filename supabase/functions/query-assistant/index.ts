@@ -21,8 +21,34 @@ serve(async (req) => {
       throw new Error('OPENAI_API_KEY not configured');
     }
 
-    const { org_id, query, top_k = 4, lang = "english", domain = "" } = await req.json();
+    const { org_id, query, top_k = 4, lang = "english", domain = "", history = [] } = await req.json();
     console.log('Query received:', { org_id, query, lang, domain });
+
+    // Step 0: Detect escalation intent using conversation history context
+    const lastBotMessage = [...history].reverse().find((m: any) => m.role === "assistant")?.content || "";
+    const isAfterEscalationPrompt = lastBotMessage.includes("connect with a live agent") || 
+                                      lastBotMessage.includes("நேரடி முகவருடன் இணைய") ||
+                                      lastBotMessage.includes("live agent") ||
+                                      lastBotMessage.includes("further assistance");
+
+    // Check if user is expressing intent to connect to agent
+    const escalationPatterns = /^(yes|yeah|yep|sure|ok|okay|please|connect|connect me|connect me with|connect me to|i want to connect|live agent|talk to agent|speak to agent|human|real person|connect me with live agent|connect me with an agent|i need help from a person)/i;
+    const isEscalationIntent = escalationPatterns.test(query.trim()) && isAfterEscalationPrompt;
+    const isDirectEscalation = /^(connect me with|connect me to|talk to|speak to|i want to talk to|i need).*?(agent|human|person|representative|support)/i.test(query.trim());
+
+    if (isEscalationIntent || isDirectEscalation) {
+      const escalationMsg = lang === "tamil"
+        ? "இந்தக் கேள்விக்கு என்னிடம் போதுமான தகவல் இல்லை. மேலும் உதவிக்கு ஒரு நேரடி முகவருடன் இணைய விரும்புகிறீர்களா?"
+        : "I don't have enough information to answer that question. Would you like to connect with a live agent for further assistance?";
+      
+      return new Response(JSON.stringify({
+        answer: escalationMsg,
+        retrieved_docs: [],
+        source: 'escalation'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Step 1: Check if question is within the chosen domain scope
     if (domain) {
@@ -42,8 +68,10 @@ Determine if the user's question is related to the "${domain}" domain or general
 Reply with ONLY "IN_SCOPE" or "OUT_OF_SCOPE". Nothing else.
 
 IMPORTANT: Generic greetings (hello, hi, hey, good morning, thanks, etc.), general conversation starters, pleasantries, and simple acknowledgments should ALWAYS be classified as "IN_SCOPE".
+IMPORTANT: Requests to connect with an agent, talk to a human, get live support, or any customer service escalation requests should ALWAYS be classified as "IN_SCOPE".
+IMPORTANT: Affirmative responses (yes, yeah, sure, ok, please) should ALWAYS be classified as "IN_SCOPE".
 
-Examples of IN_SCOPE: greetings, thank you, yes, no, ok, questions about products, services, policies, hours, pricing, delivery, returns, bookings, appointments — anything a ${domain} business customer might ask, including general chit-chat.
+Examples of IN_SCOPE: greetings, thank you, yes, no, ok, questions about products, services, policies, hours, pricing, delivery, returns, bookings, appointments, requests to talk to agent/human — anything a ${domain} business customer might ask, including general chit-chat.
 Examples of OUT_OF_SCOPE: questions that are clearly and specifically about a completely different domain (e.g., asking a supermarket bot about travel visas, or asking a health bot about fabric printing).`
             },
             { role: 'user', content: query }
@@ -180,6 +208,18 @@ ${lang === "tamil" ? 'If escalating, say: "இந்தக் கேள்வி
       ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
       : query;
 
+    // Build messages with conversation history for better context
+    const aiMessages: any[] = [
+      { role: 'system', content: systemPrompt },
+    ];
+    // Add recent history for context
+    if (history && history.length > 0) {
+      for (const h of history.slice(-4)) {
+        aiMessages.push({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content });
+      }
+    }
+    aiMessages.push({ role: 'user', content: userPrompt });
+
     const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -188,10 +228,7 @@ ${lang === "tamil" ? 'If escalating, say: "இந்தக் கேள்வி
       },
       body: JSON.stringify({
         model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
+        messages: aiMessages,
         temperature: 0.7,
         max_tokens: 2048,
       }),

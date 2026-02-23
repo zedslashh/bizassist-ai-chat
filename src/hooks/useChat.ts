@@ -181,6 +181,12 @@ export const useChat = (orgId: string, language: string = "english", domain: str
 
       if (userMsgError) throw userMsgError;
 
+      // Build recent conversation history for context
+      const recentMessages = messages.slice(-6).map(m => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.content,
+      }));
+
       // Call backend via edge function
       const { data, error } = await supabase.functions.invoke('query-assistant', {
         body: {
@@ -189,6 +195,7 @@ export const useChat = (orgId: string, language: string = "english", domain: str
           top_k: 4,
           lang: language,
           domain,
+          history: recentMessages,
         }
       });
 
