@@ -58,6 +58,7 @@ serve(async (req) => {
   try {
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
     const BACKEND_URL = Deno.env.get('BACKEND_API_URL');
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
     
@@ -91,17 +92,22 @@ serve(async (req) => {
 
     // Step 2: Semantic FAQ search using embeddings
     let faqAnswer: string | null = null;
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       try {
         const embedding = await getQueryEmbedding(query, OPENAI_API_KEY);
-        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('Embedding generated, length:', embedding.length);
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
         
         const { data: matchedFaqs, error: matchError } = await supabase.rpc('match_faqs', {
-          query_embedding: embedding,
+          query_embedding: JSON.stringify(embedding),
           match_threshold: 0.5,
           match_count: 3,
           filter_domain: domain || null,
         });
+
+        if (matchError) {
+          console.error('FAQ RPC error:', matchError);
+        }
 
         if (!matchError && matchedFaqs && matchedFaqs.length > 0) {
           console.log('Semantic FAQ matches:', matchedFaqs.map((f: any) => ({ q: f.q_en, sim: f.similarity })));
