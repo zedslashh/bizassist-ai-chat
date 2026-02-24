@@ -47,6 +47,7 @@ export type Database = {
           a_ta: string
           created_at: string | null
           domain: string
+          embedding: string | null
           id: number
           q_en: string
           q_ta: string
@@ -56,6 +57,7 @@ export type Database = {
           a_ta: string
           created_at?: string | null
           domain: string
+          embedding?: string | null
           id?: number
           q_en: string
           q_ta: string
@@ -65,6 +67,7 @@ export type Database = {
           a_ta?: string
           created_at?: string | null
           domain?: string
+          embedding?: string | null
           id?: number
           q_en?: string
           q_ta?: string
@@ -376,6 +379,23 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      match_faqs: {
+        Args: {
+          filter_domain?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          a_en: string
+          a_ta: string
+          domain: string
+          id: number
+          q_en: string
+          q_ta: string
+          similarity: number
+        }[]
       }
     }
     Enums: {
