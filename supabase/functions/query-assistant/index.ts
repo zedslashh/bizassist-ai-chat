@@ -100,8 +100,8 @@ serve(async (req) => {
         
         const { data: matchedFaqs, error: matchError } = await supabase.rpc('match_faqs', {
           query_embedding: JSON.stringify(embedding),
-          match_threshold: 0.5,
-          match_count: 3,
+          match_threshold: 0.3,
+          match_count: 5,
           filter_domain: domain || null,
         });
 
@@ -113,7 +113,7 @@ serve(async (req) => {
           console.log('Semantic FAQ matches:', matchedFaqs.map((f: any) => ({ q: f.q_en, sim: f.similarity })));
           
           // If top match is very high confidence, return directly
-          if (matchedFaqs[0].similarity > 0.8) {
+          if (matchedFaqs[0].similarity > 0.6) {
             faqAnswer = lang === "tamil" ? matchedFaqs[0].a_ta : matchedFaqs[0].a_en;
           } else {
             // Use LLM to pick the best match
@@ -127,7 +127,7 @@ serve(async (req) => {
               body: JSON.stringify({
                 model: 'gpt-4o-mini',
                 messages: [
-                  { role: 'system', content: `You match user questions to FAQs. If a FAQ answers the question, return ONLY the ${lang === "tamil" ? "Tamil (A_TA)" : "English (A_EN)"} answer. If none match, reply "NO_MATCH".` },
+                  { role: 'system', content: `You match user questions to FAQs. If a FAQ answers the question, return ONLY the answer text (no labels like "A_EN:" or "A_TA:"). ${lang === "tamil" ? "Return the Tamil answer." : "Return the English answer."} If none match, reply "NO_MATCH".` },
                   { role: 'user', content: `Question: ${query}\n\nFAQs:\n${faqContext}` }
                 ],
                 temperature: 0.1, max_tokens: 500,
