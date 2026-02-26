@@ -11,208 +11,173 @@ const corsHeaders = {
 
 interface TelegramMessage {
   message?: {
-    chat: {
-      id: number;
-      first_name?: string;
-    };
+    chat: { id: number; first_name?: string };
     text?: string;
-    from?: {
-      language_code?: string;
-    };
+    from?: { language_code?: string };
   };
 }
 
+interface Session {
+  chat_id: number;
+  org_id: string;
+  domain: string | null;
+  language: string;
+}
+
+function getSupabase() {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  return createClient(url, key);
+}
+
+async function getSession(chatId: number): Promise<Session | null> {
+  const supabase = getSupabase();
+  const { data } = await supabase
+    .from('telegram_sessions')
+    .select('*')
+    .eq('chat_id', chatId)
+    .single();
+  return data;
+}
+
+async function upsertSession(chatId: number, orgId: string, domain?: string, language?: string) {
+  const supabase = getSupabase();
+  await supabase.from('telegram_sessions').upsert({
+    chat_id: chatId,
+    org_id: orgId,
+    domain: domain || null,
+    language: language || 'english',
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'chat_id' });
+}
+
 async function sendTelegramMessage(chatId: number, text: string) {
-  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-  
-  await fetch(url, {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML',
-    }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   });
 }
 
-async function checkFAQs(query: string, language: string = "english"): Promise<string | null> {
+async function queryAssistant(orgId: string, query: string, language: string, domain?: string | null) {
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-  const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
-  
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !OPENAI_API_KEY) return null;
-  
+  if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+
+  const supabase = getSupabase();
+
+  // 1. Semantic FAQ search
   try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const searchColumn = language === "tamil" ? "q_ta" : "q_en";
-    
-    const { data: faqs } = await supabase
-      .from('faqs')
-      .select('*')
-      .textSearch(searchColumn, query.split(' ').join(' | '), { type: 'websearch' })
-      .limit(3);
-    
-    if (faqs && faqs.length > 0) {
-      const faqContext = faqs.map((faq: any) => 
-        `Q: ${language === "tamil" ? faq.q_ta : faq.q_en}\nA: ${language === "tamil" ? faq.a_ta : faq.a_en}`
-      ).join('\n\n');
-      
-      const matchResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            { role: 'system', content: 'Given a user question and FAQ pairs, return the most relevant answer. If no FAQ matches well, respond with "NO_MATCH". Otherwise return only the answer text.' },
-            { role: 'user', content: `User Question: ${query}\n\nAvailable FAQs:\n${faqContext}` }
-          ],
-          temperature: 0.1,
-          max_tokens: 500,
-        }),
-      });
-      
-      if (matchResponse.ok) {
-        const matchData = await matchResponse.json();
-        const faqAnswer = matchData.choices?.[0]?.message?.content?.trim();
-        if (faqAnswer && faqAnswer !== "NO_MATCH") {
-          return faqAnswer;
+    const embRes = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'text-embedding-3-small', input: query }),
+    });
+    if (embRes.ok) {
+      const embData = await embRes.json();
+      const embedding = embData.data?.[0]?.embedding;
+      if (embedding) {
+        const { data: faqs } = await supabase.rpc('match_faqs', {
+          query_embedding: JSON.stringify(embedding),
+          match_threshold: 0.3,
+          match_count: 5,
+          filter_domain: domain || null,
+        });
+        if (faqs && faqs.length > 0) {
+          console.log('FAQ matches:', faqs.map((f: any) => ({ q: f.q_en, sim: f.similarity })));
+          if (faqs[0].similarity > 0.6) {
+            return language === 'tamil' ? faqs[0].a_ta : faqs[0].a_en;
+          }
+          // LLM pick best
+          const faqContext = faqs.map((f: any) =>
+            `Q: ${f.q_en}\nA_EN: ${f.a_en}\nA_TA: ${f.a_ta}`
+          ).join('\n\n');
+          const pickRes = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [
+                { role: 'system', content: `You match user questions to FAQs. If a FAQ answers the question, return ONLY the answer text (no labels like "A_EN:" or "A_TA:"). ${language === "tamil" ? "Return the Tamil answer." : "Return the English answer."} If none match, reply "NO_MATCH".` },
+                { role: 'user', content: `Question: ${query}\n\nFAQs:\n${faqContext}` }
+              ],
+              temperature: 0.1, max_tokens: 500,
+            }),
+          });
+          if (pickRes.ok) {
+            const pickData = await pickRes.json();
+            const ans = pickData.choices?.[0]?.message?.content?.trim();
+            if (ans && ans !== 'NO_MATCH') return ans;
+          }
         }
       }
     }
-  } catch (error) {
-    console.error('Error checking FAQs:', error);
-  }
-  
-  return null;
-}
+  } catch (e) { console.error('FAQ search error:', e); }
 
-async function queryOpenAI(orgId: string, query: string, language: string = "english") {
-  console.log(`Querying OpenAI for org: ${orgId}, lang: ${language}`);
-  
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  if (!OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY not configured');
-  }
-
-  // Check FAQs first
-  const faqAnswer = await checkFAQs(query, language);
-  if (faqAnswer) {
-    console.log('FAQ match found');
-    return faqAnswer;
-  }
-
+  // 2. Vector DB context from backend
+  let context = "";
   try {
-    // Get context from backend
-    let context = "";
-    try {
-      const contextResponse = await fetch(`${BACKEND_API_URL}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          org_id: orgId,
-          query: query,
-          top_k: 4,
-          lang: "english"
-        }),
-      });
-      
-      const contextData = await contextResponse.json();
-      if (contextData.retrieved_docs && contextData.retrieved_docs.length > 0) {
-        context = contextData.retrieved_docs
-          .map((doc: any) => doc.doc)
-          .join("\n\n");
-      }
-    } catch (error) {
-      console.error('Error fetching context:', error);
-    }
-
-    const systemPrompt = language === "tamil"
-      ? "நீங்கள் BizAssistAI. வழங்கப்பட்ட ஆவணங்களைப் பயன்படுத்தி சுருக்கமாக பதிலளிக்கவும்."
-      : "You are BizAssistAI. Answer concisely using the provided documents.";
-
-    const userPrompt = context
-      ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`
-      : query;
-
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const ctxRes = await fetch(`${BACKEND_API_URL}/query`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 1024,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: orgId, query, top_k: 4, lang: "english" }),
     });
-
-    if (!openaiResponse.ok) {
-      throw new Error(`OpenAI API error: ${openaiResponse.status}`);
+    const ctxData = await ctxRes.json();
+    if (ctxData.retrieved_docs?.length > 0) {
+      context = ctxData.retrieved_docs.map((d: any) => d.doc).join("\n\n");
     }
+  } catch (e) { console.error('Backend context error:', e); }
 
-    const data = await openaiResponse.json();
-    return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
-  } catch (error) {
-    console.error('Error querying OpenAI:', error);
-    throw error;
-  }
+  // 3. Final LLM answer
+  const systemPrompt = language === "tamil"
+    ? "நீங்கள் BizAssistAI. வழங்கப்பட்ட ஆவணங்களைப் பயன்படுத்தி சுருக்கமாக பதிலளிக்கவும். கேள்விக்கான பதில் ஆவணங்களில் இல்லையென்றால், மன்னிப்புக் கேட்டு வேறு எதாவது உதவ முடியுமா எனக் கேளுங்கள்."
+    : "You are BizAssistAI. Answer concisely using the provided documents. If you cannot answer from the documents, apologize and ask if you can help with something else.";
+
+  const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: context ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}` : query }
+      ],
+      temperature: 0.7, max_tokens: 1024,
+    }),
+  });
+
+  if (!openaiRes.ok) throw new Error(`OpenAI error: ${openaiRes.status}`);
+  const data = await openaiRes.json();
+  return data.choices?.[0]?.message?.content || "I couldn't generate a response.";
 }
 
-async function getGreeting(orgId: string, language: string = "english") {
+async function getGreeting(orgId: string, language: string) {
   const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  
-  try {
-    const hour = new Date().getHours();
-    let timeOfDay = "Good evening";
-    if (hour >= 5 && hour < 12) {
-      timeOfDay = "Good morning";
-    } else if (hour >= 12 && hour < 18) {
-      timeOfDay = "Good afternoon";
-    }
-    
-    const englishGreeting = `${timeOfDay}! Welcome to ${orgId} 👋. How can I assist you today?`;
-    
-    if (language === "tamil" && OPENAI_API_KEY) {
-      const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+  const hour = new Date().getHours();
+  const timeOfDay = hour >= 5 && hour < 12 ? "Good morning" : hour >= 12 && hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = `${timeOfDay}! Welcome to ${orgId} 👋. How can I assist you today?`;
+
+  if (language === "tamil" && OPENAI_API_KEY) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           messages: [
-            { role: 'system', content: 'You are a helpful assistant that translates text to Tamil.' },
-            { role: 'user', content: `Translate to Tamil: ${englishGreeting}` }
+            { role: 'system', content: 'Translate to Tamil. Return ONLY the Tamil text.' },
+            { role: 'user', content: greeting }
           ],
-          temperature: 0.3,
-          max_tokens: 256,
+          temperature: 0.3, max_tokens: 256,
         }),
       });
-
-      if (openaiResponse.ok) {
-        const data = await openaiResponse.json();
-        const tamilGreeting = data.choices?.[0]?.message?.content;
-        if (tamilGreeting) return tamilGreeting.trim();
+      if (res.ok) {
+        const d = await res.json();
+        const t = d.choices?.[0]?.message?.content?.trim();
+        if (t) return t;
       }
-    }
-    
-    return englishGreeting;
-  } catch (error) {
-    console.error('Error getting greeting:', error);
-    return language === "tamil" 
-      ? `வணக்கம்! ${orgId} க்கு வரவேற்கிறோம் 👋. நான் உங்களுக்கு எவ்வாறு உதவ முடியும்?`
-      : `Hello! Welcome to ${orgId} 👋. How can I assist you today?`;
+    } catch (e) { console.error('Translation error:', e); }
   }
+  return greeting;
 }
 
 serve(async (req) => {
@@ -222,7 +187,7 @@ serve(async (req) => {
 
   try {
     const body: TelegramMessage = await req.json();
-    console.log('Received webhook:', JSON.stringify(body));
+    console.log('Webhook:', JSON.stringify(body));
 
     if (!body.message?.text || !body.message?.chat?.id) {
       return new Response(JSON.stringify({ ok: true }), {
@@ -231,18 +196,30 @@ serve(async (req) => {
     }
 
     const chatId = body.message.chat.id;
-    const userMessage = body.message.text;
-    const userLanguage = body.message.from?.language_code?.includes('ta') ? 'tamil' : 'english';
+    const userMessage = body.message.text.trim();
+    const userLangCode = body.message.from?.language_code || '';
 
-    let orgId = "default_org";
-    
+    // Handle /start command with deep link: /start orgId or /start orgId__domain
     if (userMessage.startsWith('/start')) {
       const parts = userMessage.split(' ');
-      if (parts.length > 1) {
-        orgId = parts[1];
-      }
+      let orgId = "default_org";
+      let domain: string | undefined;
       
-      const greeting = await getGreeting(orgId, userLanguage);
+      if (parts.length > 1) {
+        const payload = parts[1];
+        if (payload.includes('__')) {
+          const [org, dom] = payload.split('__', 2);
+          orgId = org;
+          domain = dom;
+        } else {
+          orgId = payload;
+        }
+      }
+
+      const language = userLangCode.includes('ta') ? 'tamil' : 'english';
+      await upsertSession(chatId, orgId, domain, language);
+      
+      const greeting = await getGreeting(orgId, language);
       await sendTelegramMessage(chatId, greeting);
       
       return new Response(JSON.stringify({ ok: true }), {
@@ -250,12 +227,38 @@ serve(async (req) => {
       });
     }
 
+    // Handle /lang command to switch language
+    if (userMessage.startsWith('/lang')) {
+      const session = await getSession(chatId);
+      if (!session) {
+        await sendTelegramMessage(chatId, "Please start a conversation first with /start");
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const newLang = session.language === 'english' ? 'tamil' : 'english';
+      await upsertSession(chatId, session.org_id, session.domain || undefined, newLang);
+      await sendTelegramMessage(chatId, newLang === 'tamil' ? '🌐 மொழி தமிழுக்கு மாற்றப்பட்டது' : '🌐 Language switched to English');
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Regular message - look up session
+    const session = await getSession(chatId);
+    if (!session) {
+      await sendTelegramMessage(chatId, "👋 Please start by clicking a link like:\nhttps://t.me/YourBot?start=YourOrg");
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     try {
-      const answer = await queryOpenAI(orgId, userMessage, userLanguage);
+      const answer = await queryAssistant(session.org_id, userMessage, session.language, session.domain);
       await sendTelegramMessage(chatId, answer);
     } catch (error) {
-      console.error('Error processing query:', error);
-      const errorMsg = userLanguage === 'tamil'
+      console.error('Query error:', error);
+      const errorMsg = session.language === 'tamil'
         ? 'மன்னிக்கவும், ஏதோ தவறு நடந்துவிட்டது. மீண்டும் முயற்சிக்கவும்.'
         : 'Sorry, something went wrong. Please try again.';
       await sendTelegramMessage(chatId, errorMsg);
@@ -269,10 +272,7 @@ serve(async (req) => {
     console.error('Webhook error:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
