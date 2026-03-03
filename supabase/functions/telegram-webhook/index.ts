@@ -3,6 +3,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const BACKEND_API_URL = Deno.env.get("BACKEND_API_URL");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const TELEGRAM_WEBHOOK_URL = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/telegram-webhook`
+  : null;
+
+let lastWebhookCheckAt = 0;
+const WEBHOOK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +64,46 @@ async function sendTelegramMessage(chatId: number, text: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
   });
+}
+
+async function ensureTelegramWebhook() {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_WEBHOOK_URL) return;
+
+  const now = Date.now();
+  if (now - lastWebhookCheckAt < WEBHOOK_CHECK_INTERVAL_MS) return;
+  lastWebhookCheckAt = now;
+
+  try {
+    const infoRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+    if (!infoRes.ok) {
+      console.error('Failed to get Telegram webhook info:', infoRes.status);
+      return;
+    }
+
+    const info = await infoRes.json();
+    const currentWebhookUrl = info?.result?.url || '';
+
+    if (currentWebhookUrl === TELEGRAM_WEBHOOK_URL) return;
+
+    const setRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: TELEGRAM_WEBHOOK_URL,
+        allowed_updates: ['message'],
+      }),
+    });
+
+    if (!setRes.ok) {
+      console.error('Failed to set Telegram webhook:', setRes.status);
+      return;
+    }
+
+    const setData = await setRes.json();
+    console.log('Telegram webhook configured:', setData?.description || 'ok');
+  } catch (error) {
+    console.error('ensureTelegramWebhook error:', error);
+  }
 }
 
 async function queryAssistant(orgId: string, query: string, language: string, domain?: string | null) {
@@ -186,6 +233,7 @@ serve(async (req) => {
   }
 
   try {
+    await ensureTelegramWebhook();
     const body: TelegramMessage = await req.json();
     console.log('Webhook:', JSON.stringify(body));
 
