@@ -9,6 +9,7 @@ const TELEGRAM_WEBHOOK_URL = SUPABASE_URL
   : null;
 
 let lastWebhookCheckAt = 0;
+let lastWebhookCheckToken = "";
 const WEBHOOK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const corsHeaders = {
@@ -115,8 +116,10 @@ async function ensureTelegramWebhook() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_WEBHOOK_URL) return;
 
   const now = Date.now();
-  if (now - lastWebhookCheckAt < WEBHOOK_CHECK_INTERVAL_MS) return;
+  const tokenChanged = lastWebhookCheckToken !== TELEGRAM_BOT_TOKEN;
+  if (!tokenChanged && now - lastWebhookCheckAt < WEBHOOK_CHECK_INTERVAL_MS) return;
   lastWebhookCheckAt = now;
+  lastWebhookCheckToken = TELEGRAM_BOT_TOKEN;
 
   try {
     const infoRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
