@@ -9,6 +9,7 @@ const TELEGRAM_WEBHOOK_URL = SUPABASE_URL
   : null;
 
 let lastWebhookCheckAt = 0;
+let lastWebhookCheckToken = "";
 const WEBHOOK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 const corsHeaders = {
