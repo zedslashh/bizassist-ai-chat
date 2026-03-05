@@ -58,12 +58,57 @@ async function upsertSession(chatId: number, orgId: string, domain?: string, lan
   }, { onConflict: 'chat_id' });
 }
 
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4000;
+
+function splitTelegramMessage(text: string, maxLength = TELEGRAM_MAX_MESSAGE_LENGTH): string[] {
+  if (text.length <= maxLength) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf('\n', maxLength);
+    if (splitAt < Math.floor(maxLength * 0.6)) {
+      splitAt = remaining.lastIndexOf(' ', maxLength);
+    }
+    if (splitAt < 1) splitAt = maxLength;
+
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 async function sendTelegramMessage(chatId: number, text: string) {
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-  });
+  const message = (text || '').trim();
+  if (!message) {
+    console.warn('Skipping empty Telegram message', { chatId });
+    return;
+  }
+
+  const chunks = splitTelegramMessage(message);
+
+  for (const [index, chunk] of chunks.entries()) {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: chunk }),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.ok) {
+      console.error('Telegram sendMessage failed', {
+        chatId,
+        chunk: index + 1,
+        totalChunks: chunks.length,
+        status: response.status,
+        payload,
+      });
+      break;
+    }
+  }
 }
 
 async function ensureTelegramWebhook() {
