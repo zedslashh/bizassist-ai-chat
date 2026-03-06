@@ -176,7 +176,7 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 @app.post("/query")
 def query_model(req: QueryRequest):
-    col_name = f"bizassist_{req.org_id}"
+    col_name = f"bizassist_{sanitize_org_id(req.org_id)}"
 
     try:
         vectordb = Chroma(
