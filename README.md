@@ -1,73 +1,153 @@
-# Welcome to your Lovable project
+# BizAssistAI Chatbot
 
-## Project info
+A platform that allows **Small and Medium Enterprises (SMEs)** to easily
+create and deploy AI-powered chatbots without requiring advanced
+technical knowledge.
 
-**URL**: https://lovable.dev/projects/9d9a90f0-f8bf-4d50-9c05-717b8cb37b26
+Businesses can upload their documents, generate a chatbot using
+**Retrieval-Augmented Generation (RAG)** and integrate the bot into
+their websites or messaging platforms.
 
-## How can I edit this code?
+------------------------------------------------------------------------
 
-There are several ways of editing your application.
+## 🚀 Features
 
-**Use Lovable**
+-   📄 **Upload Knowledge Base**
+    -   Upload PDFs and documents to train the chatbot.
+    -   The system converts documents into embeddings for semantic
+        search.
+-   🌐 **Multiple Integration Options**
+    -   Landing Page Chatbot
+    -   Website Widget
+    -   Telegram Bot
+-   🌍 **Multilingual Support**
+    -   Supports multiple languages using **multilingual-e5-base
+        embeddings**.
+-   🤖 **AI-Powered Responses**
+    -   Uses **Gemini models** for intelligent conversational responses.
+-   🔍 **Semantic Search with RAG**
+    -   Queries are answered using **ChromaDB vector search** for
+        accurate retrieval.
+-   💳 **Subscription & Payments**
+    -   Integrated **Stripe** for managing user subscriptions.
+-   🔐 **Authentication**
+    -   Secure login using **Supabase Authentication**.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/9d9a90f0-f8bf-4d50-9c05-717b8cb37b26) and start prompting.
+------------------------------------------------------------------------
 
-Changes made via Lovable will be committed automatically to this repo.
+## 🏗️ Tech Stack
 
-**Use your preferred IDE**
+### Backend
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+-   **FastAPI**
+-   **Python**
+-   **ChromaDB (Vector Database)**
+-   **RAG Architecture**
+-   **Gemini API**
+-   **multilingual-e5-base embeddings**
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Frontend
 
-Follow these steps:
+-   **React**
+-   **Tailwind / UI libraries**
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Authentication
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+-   **Supabase Auth**
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Payments
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+-   **Stripe**
+
+### Deployment Integrations
+
+-   Website **Widget**
+-   **Landing Page chatbot**
+-   **Telegram Bot**
+
+------------------------------------------------------------------------
+
+## 🧠 How It Works
+
+1.  **User uploads PDFs or documents**
+2.  Documents are **processed and converted into embeddings**
+3.  Embeddings are stored in **ChromaDB**
+4.  When a user asks a question:
+    -   Query is embedded using **multilingual-e5-base**
+    -   Relevant context is retrieved from **ChromaDB**
+    -   Context is sent to **Gemini model**
+5.  Gemini generates a **context-aware response**
+
+------------------------------------------------------------------------
+
+## ⚙️ Installation
+
+### 1. Clone the repository
+
+``` bash
+git clone https://github.com/zedslashh/bizassist-ai-chat.git
+cd sme-chatbot-builder
+```
+
+### 2. Install backend dependencies
+
+``` bash
+pip install -r requirements.txt
+```
+
+### 3. Run FastAPI server
+
+``` bash
+uvicorn backend.main:app --reload
+```
+
+### 4. Start Frontend
+
+``` bash
+cd frontend
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+------------------------------------------------------------------------
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 🔌 Integration Methods
 
-**Use GitHub Codespaces**
+### 1️⃣ Landing Page Chatbot
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+A dedicated chatbot page hosted for the business.
 
-## What technologies are used for this project?
+### 2️⃣ Website Widget
 
-This project is built with:
+Embed the chatbot in any website using a small script.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### 3️⃣ Telegram Bot
 
-## How can I deploy this project?
+Deploy the chatbot as a Telegram assistant for customer interaction.
 
-Simply open [Lovable](https://lovable.dev/projects/9d9a90f0-f8bf-4d50-9c05-717b8cb37b26) and click on Share -> Publish.
+------------------------------------------------------------------------
 
-## Can I connect a custom domain to my Lovable project?
+## 📂 Project Architecture
 
-Yes, you can!
+    Frontend (React)
+            │
+            │ API Requests
+            ▼
+    Backend (FastAPI)
+            │
+            ├── Authentication (Supabase)
+            ├── Payments (Stripe)
+            ├── Embedding Model (multilingual-e5-base)
+            ├── Vector Store (ChromaDB)
+            └── LLM (OpenAI)
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+------------------------------------------------------------------------
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## 🎯 Target Users
+
+-   Small Businesses
+-   Service Providers
+-   Local Shops
+-   Startups
+-   SMEs needing automated customer support
+
