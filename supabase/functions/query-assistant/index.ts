@@ -90,7 +90,29 @@ serve(async (req) => {
       }
     }
 
-    // Step 2: Semantic FAQ search using embeddings
+    // Step 2: Fetch document context from backend (in parallel with FAQ search)
+    let documentContext = "";
+    const docPromise = (async () => {
+      try {
+        if (BACKEND_URL) {
+          console.log('Querying document backend for org_id:', org_id);
+          const ctxResp = await fetch(`${BACKEND_URL}/query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ org_id, query, top_k, lang: "english" }),
+          });
+          const ctxData = await ctxResp.json();
+          console.log('Document backend response:', { docs_count: ctxData.retrieved_docs?.length || 0 });
+          if (ctxData.retrieved_docs?.length > 0) {
+            documentContext = ctxData.retrieved_docs.map((d: any) => d.doc).join("\n\n");
+          }
+        }
+      } catch (error) {
+        console.error('Backend document context error:', error);
+      }
+    })();
+
+    // Step 3: Semantic FAQ search using embeddings
     let faqAnswer: string | null = null;
     if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
       try {
@@ -149,36 +171,37 @@ serve(async (req) => {
     }
 
     if (faqAnswer) {
-      return new Response(JSON.stringify({ answer: faqAnswer, retrieved_docs: [], source: 'faq' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Step 3: Get context from backend vector DB
-    let context = "";
-    try {
-      if (BACKEND_URL) {
-        const ctxResp = await fetch(`${BACKEND_URL}/query`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ org_id, query, top_k, lang: "english" }),
+      // Even with FAQ answer, wait for doc context and see if we should augment
+      await docPromise;
+      if (!documentContext) {
+        // No document context, return FAQ answer as-is
+        return new Response(JSON.stringify({ answer: faqAnswer, retrieved_docs: [], source: 'faq' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
-        const ctxData = await ctxResp.json();
-        if (ctxData.retrieved_docs?.length > 0) {
-          context = ctxData.retrieved_docs.map((d: any) => d.doc).join("\n\n");
-        }
       }
-    } catch (error) {
-      console.error('Backend context error:', error);
+      // We have both FAQ and document context - use LLM to give a richer answer
+      console.log('Combining FAQ answer with document context');
     }
 
-    // Step 4: Generate answer with LLM
+    // Step 4: Wait for document context if not already done
+    await docPromise;
+    const context = documentContext;
+    console.log('Document context available:', context.length > 0, 'length:', context.length);
+
+    // Step 5: Generate answer with LLM
     const domainInstr = domain ? `You are a ${domain} business assistant. Only answer ${domain}-related questions.` : '';
     const systemPrompt = `You are BizAssistAI. ${domainInstr} Answer concisely using provided documents.
 If you cannot find the answer, respond: "I don't have enough information to answer that question. Would you like to connect with a live agent for further assistance?"
 ${lang === "tamil" ? 'If escalating, use Tamil: "இந்தக் கேள்விக்கு என்னிடம் போதுமான தகவல் இல்லை. மேலும் உதவிக்கு ஒரு நேரடி முகவருடன் இணைய விரும்புகிறீர்களா?"' : ''}`;
 
-    const userPrompt = context ? `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}` : query;
+    let userPrompt = '';
+    if (faqAnswer && context) {
+      userPrompt = `FAQ ANSWER:\n${faqAnswer}\n\nDOCUMENTS:\n${context}\n\nQUESTION:\n${query}\n\nUse both the FAQ answer and the documents to provide the best possible answer.`;
+    } else if (context) {
+      userPrompt = `DOCUMENTS:\n${context}\n\nQUESTION:\n${query}`;
+    } else {
+      userPrompt = query;
+    }
 
     const aiMessages: any[] = [{ role: 'system', content: systemPrompt }];
     if (history?.length > 0) {
